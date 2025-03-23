@@ -1,0 +1,42 @@
+{
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch on MCU",
+            "program": "${file}",
+            "args": [],
+            "osx": {
+                "runtimeExecutable": "mise"
+            },
+            "linux": {
+                "runtimeExecutable": "mise"
+            },
+            "runtimeArgs": [
+                "task",
+                "run",
+                "run_mcu"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch on Computer",
+            "program": "${file}",
+            "args": [],
+            "osx": {
+                "runtimeExecutable": "mise"
+            },
+            "linux": {
+                "runtimeExecutable": "mise"
+            },
+            "runtimeArgs": [
+                "task",
+                "run",
+                "run_local"
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}

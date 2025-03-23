@@ -1,0 +1,79 @@
+[settings]
+python.uv_venv_auto = true
+
+[tools]
+python = "3.13.2"
+
+[tasks]
+
+[tasks.test]
+description = 'Run the tests'
+run = "micropython test/run_tests.py"
+
+
+[tasks.lint]
+description = 'Lint the code'
+run = "ruff check"
+
+
+[tasks.format]
+description = 'Format the code'
+run = "ruff format"
+
+[tasks.deploy_lib]
+description = 'deploy the library to the device'
+run = """
+#!/usr/bin/env bash
+
+if ! mpremote fs ls lib &>/dev/null; then
+    echo "Creating the lib directory on the device"
+    mpremote fs mkdir lib
+fi
+echo "Deploying libraries to the device..."
+for entry in ./lib/*; do
+    if [ -e "$entry" ]; then
+        echo "Copying $(basename "$entry")..."
+        mpremote cp --no-verbose -r "$entry" :lib
+    fi
+done
+mpremote cp --no-verbose -r ./src/mylib :lib
+"""
+
+[tasks.deploy_all]
+depends = ["deploy_lib"]
+description = "Deploy boot.py, main.py and libs to the MCU"
+run = """
+#!/usr/bin/env bash
+if [ -f "./src/main.py" ]; then
+    echo "Copying main.py..."
+    mpremote cp --no-verbose ./src/main.py :/
+fi
+
+if [ -f "./src/boot.py" ]; then
+    echo "Copying boot.py..."
+    mpremote cp --no-verbose ./src/boot.py :/
+fi
+"""
+
+
+[tasks.run_mcu]
+description = 'Run on connected microcontroller'
+run = """
+#!/usr/bin/env bash
+if [ -z "$1" ]; then
+    mpremote run src/main.py ||  mpremote soft-reset
+else
+    mpremote run $1 ||  mpremote soft-reset
+fi
+"""
+
+[tasks.run_local]
+description = 'Run locally (computer)'
+run = """
+#!/usr/bin/env bash
+if [ -z "$1" ]; then
+    micropython src/main.py
+else
+    micropython $1
+fi
+"""

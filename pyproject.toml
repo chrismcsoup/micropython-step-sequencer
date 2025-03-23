@@ -1,0 +1,95 @@
+[project]
+name = "micropython-project-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11.0",
+    "micropython-unix-stubs==1.24.1.post2",
+    "mpremote>=1.24.1",
+    "esptool>=4.8.1",
+]
+
+
+# based on the micropython-lib ruff configuration
+# https://github.com/micropython/micropython-lib/blob/master/pyproject.toml
+[tool.ruff]
+exclude = ["python-stdlib", "unix-ffi"]
+
+line-length = 99
+target-version = "py37"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 61
+
+[tool.ruff.lint.pylint]
+allow-magic-value-types = ["bytes", "int", "str"]
+max-args = 14
+max-branches = 58
+max-returns = 13
+max-statements = 166
+
+[tool.ruff.lint.per-file-ignores]
+# manifest.py files are evaluated with some global names pre-defined
+"**/manifest.py" = ["F821"]
+
+[tool.ruff.lint]
+ignore = [
+    "E722",
+    "E741",    # 'l' is currently widely used
+    "F401",
+    "F403",
+    "F405",
+    "E501",    # line length, recommended to disable
+    "ISC001",
+    "ISC003",  # micropython does not support implicit concatenation of f-strings
+    "PIE810",  # micropython does not support passing tuples to .startswith or .endswith
+    "PLC1901",
+    "SIM101",
+    "PLR1714",
+    "PLR5501",
+    "PLW0602",
+    "PLW0603",
+    "PLW2901",
+    "RUF012",
+    "RUF100",
+    "W191",    # tab-indent, redundant when using formatter
+]
+select = [
+    "ASYNC", # flake8-comprehensions
+    "C4",    # flake8-comprehensions
+    "C90",   # McCabe cyclomatic complexity
+    "DTZ",   # flake8-datetimez
+    "E",     # pycodestyle
+    "EXE",   # flake8-executable
+    "F",     # Pyflakes
+    "G",     # flake8-logging-format
+    "ICN",   # flake8-import-conventions
+    "INT",   # flake8-gettext
+    "ISC",   # flake8-implicit-str-concat
+    "PGH",   # pygrep-hooks
+    "PIE",   # flake8-pie
+    "PL",    # Pylint
+    "PYI",   # flake8-pyi
+    "RSE",   # flake8-raise
+    "RUF",   # Ruff-specific rules
+    "T10",   # flake8-debugger
+    "TCH",   # flake8-type-checking
+    "W",     # pycodestyle
+    "YTT",   # flake8-2020
+]
+
+[tool.pyright]
+extraPaths = ["lib-dev"]
+include = ["src"]
+ignore = ["**/typings"]
+exclude = [".*", "__*", "**/typings"]
+typeCheckingMode = "basic"
+stubPath = "typings"
+typeshedPath = ".venv/lib/python3.13/site-packages"
+pythonPlatform = "Linux"
+reportMissingModuleSource = "none"
