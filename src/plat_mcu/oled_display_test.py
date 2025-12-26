@@ -1,5 +1,9 @@
 # Test for the https://www.waveshare.com/wiki/0.91inch_OLED_Module
 
+from sys import path
+
+path.append("lib")
+
 # Display Image & text on I2C driven ssd1306 OLED display
 from machine import Pin, I2C
 from ssd1306 import SSD1306_I2C  # type: ignore

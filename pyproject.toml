@@ -8,10 +8,10 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "ruff>=0.11.0",
-    "micropython-unix-stubs==1.24.1.post2",
-    "mpremote>=1.24.1",
-    "esptool>=4.8.1",
+    "ruff>=0.14.10",
+    "micropython-unix-stubs==1.26.0.post1",
+    "mpremote>=1.27.0",
+    "esptool>=5.1.0",
 ]
 
 

@@ -77,3 +77,9 @@ else
     micropython $1
 fi
 """
+
+
+[tasks.run_web]
+description = "Serve web prototype at http://localhost:8000"
+run = "python -m http.server 8000"
+dir = "src/plat_web"

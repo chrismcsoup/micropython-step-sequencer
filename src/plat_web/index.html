@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mpy Web Midi</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+  <py-config>
+    {
+      "runtime": "micropython"
+    }
+  </py-config>
+  <link rel="icon" href="static/icons/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="static/css/styles.css" />
+</head>
+<body>
+  <div class="card">
+    <h1>Chord Soup Web</h1>
+    <p class="meta">Minimal WebMIDI test: choose output, set transpose, send a note. Works with any MIDI-capable synth; defaults to the first available device.</p>
+
+    <div class="field">
+      <label for="midi-output">MIDI Output</label>
+      <select id="midi-output"></select>
+    </div>
+
+    <div class="field">
+      <label for="transpose">Encoder (transpose semitones)</label>
+      <div class="range-row">
+        <input id="transpose" type="range" min="-24" max="24" step="1" value="0" />
+        <output id="transpose-val">0 st</output>
+      </div>
+    </div>
+
+    <button class="play" id="play-btn">Send Note</button>
+    <div class="field" style="margin-top:12px;">
+      <button class="play" id="enable-midi">Enable MIDI</button>
+    </div>
+    <div class="status" id="status">Click "Enable MIDI" to request access. Use Chrome/Edge; allow MIDI in the prompt.</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js" defer></script>
+  <script src="static/js/main.js" defer></script>
+
+  <!-- PyScript: Load the MicroPython MIDI router with JS bridge -->
+    <!-- MicroPython: load core logic and bootstrap using mpy-script -->
+     <!-- <mpy-script src="app.py"></mpy-script> -->
+    <mpy-script src="bootstrap.py" config="pyscript.json"></mpy-script>
+</body>
+</html>

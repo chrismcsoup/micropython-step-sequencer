@@ -1,0 +1,13 @@
+{
+  "urls": [
+        ["ssd1306/__init__.py", "../../lib/ssd1306/__init__.py"],
+        ["mylib/__init__.py", "../mylib/__init__.py"]
+
+
+        
+  ],
+  "deps": [
+    ["usb-device-midi", "latest"]
+  ],
+  "version": "0.1"
+}

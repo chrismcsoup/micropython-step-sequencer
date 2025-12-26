@@ -216,7 +216,6 @@ microcontroller with micropython flashed connected to the computer.
 ```bash
 $ mise tasks
 Name        Description                                                    
-clear_mcu   Deletes all files and folder on the connected MCU recursively. 
 deploy_all  Deploy boot.py, main.py and libs to the MCU                    
 deploy_lib  deploy the library to the device                               
 format      Format the code                                                
@@ -236,6 +235,24 @@ $ mise test
 
 # some tasks accept arguments (e.g. the run_loca and the run_mcu task)
 mise run_local src/hello.py
+
+```
+
+## Upgrade Micropython on the microcontroller
+ For the Waveshare ESP32-S3-Matrix use the firmware from here: https://micropython.org/download/ESP32_GENERIC_S3/
+
+ Use the standard version and the following commands
+
+```bash
+
+# NOTE: change the port and the path to the firmware file accordingly
+# Erase the flash first
+
+esptool --port /dev/cu.usbmodem1411401  erase-flash
+
+# Write the new firmware. 
+esptool --port /dev/cu.usbmodem1411401  write-flash 0 '/my/path/to/ESP32_GENERIC_S3-20251209-v1.27.0.bin'
+
 
 ```
 
