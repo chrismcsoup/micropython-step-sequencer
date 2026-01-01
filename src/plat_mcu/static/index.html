@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        h1 { color: #333; }
+        .button-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+            transition: opacity 0.3s;
+        }
+        button:hover { opacity: 0.8; }
+        .red { background-color: #ff0000; }
+        .green { background-color: #00ff00; }
+        .blue { background-color: #0000ff; }
+        .yellow { background-color: #ffff00; color: #333; }
+        .purple { background-color: #ff00ff; }
+        .cyan { background-color: #00ffff; color: #333; }
+        .white { background-color: #ffffff; color: #333; border: 1px solid #ccc; }
+        .off { background-color: #333; }
+    </style>
+</head>
+<body>
+    <h1>NeoPixel LED Controller</h1>
+    <p>Click a button to change the LED color:</p>
+    <div class="button-container">
+        <button class="red" onclick="setColor(255, 0, 0)">Red</button>
+        <button class="green" onclick="setColor(0, 255, 0)">Green</button>
+        <button class="blue" onclick="setColor(0, 0, 255)">Blue</button>
+        <button class="yellow" onclick="setColor(255, 255, 0)">Yellow</button>
+        <button class="purple" onclick="setColor(255, 0, 255)">Purple</button>
+        <button class="cyan" onclick="setColor(0, 255, 255)">Cyan</button>
+        <button class="white" onclick="setColor(255, 255, 255)">White</button>
+        <button class="off" onclick="setColor(0, 0, 0)">Off</button>
+    </div>
+    <script>
+        function setColor(r, g, b) {
+            fetch('/set-color?r=' + r + '&g=' + g + '&b=' + b)
+                .then(response => response.json())
+                .then(data => console.log('Color set:', data))
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

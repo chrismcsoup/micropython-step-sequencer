@@ -1,10 +1,19 @@
 {
   "urls": [
         ["ssd1306/__init__.py", "../../lib/ssd1306/__init__.py"],
-        ["mylib/__init__.py", "../mylib/__init__.py"]
-
-
-        
+        ["midi/__init__.py", "../../lib/midi/__init__.py"],
+        ["mylib/__init__.py", "../mylib/__init__.py"],
+        ["tls/key.pem", "tls/key.pem"],
+        ["tls/cert.pem", "tls/cert.pem"],
+        ["tls/key.der", "tls/key.der"],
+        ["tls/cert.der", "tls/cert.der"],
+        ["static/index.html", "static/index.html"],
+        ["static/index_ws.html", "static/index_ws.html"],
+        ["microdot/__init__.py", "https://raw.githubusercontent.com/miguelgrinberg/microdot/v2.5.1/src/microdot/__init__.py"],
+        ["microdot/microdot.py", "https://raw.githubusercontent.com/miguelgrinberg/microdot/v2.5.1/src/microdot/microdot.py"],
+        ["microdot/websocket.py", "https://raw.githubusercontent.com/miguelgrinberg/microdot/v2.5.1/src/microdot/websocket.py"],
+        ["microdot/helpers.py", "https://raw.githubusercontent.com/miguelgrinberg/microdot/v2.5.1/src/microdot/helpers.py"],
+        ["uQR.py", "https://raw.githubusercontent.com/WendelHime/uQR/123cc0e5af953d8212e646ce8dcdc828b399337d/uQR.py"]
   ],
   "deps": [
     ["usb-device-midi", "latest"]

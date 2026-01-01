@@ -29,6 +29,8 @@ from neopixel import NeoPixel
 led_pin = Pin(14, Pin.OUT)  # set GPIO0 to output to drive NeoPixels
 np = NeoPixel(led_pin, 64)  # create NeoPixel driver on GPIO0 for 2 pixels
 
+def color_all(r, g, b):
+    pass
 
 def wheel(pos, brightness=0.5):
     """Convert a number (0-255) to a color cycling through RGB with adjustable brightness."""
@@ -53,21 +55,19 @@ brightness = (
 )
 counter = 0
 move = 0
+
 while True:
     try:
-#        move = 1 if move == 0 else 0
         for i in range(64):
-            # if (i + move) % 2 == 0:
-            #     np[i] = (0, 0, 0)
-            # else:
             np[i] = wheel(counter, brightness)
-        # np[0] = (255,0,0)    # type: ignore # set first pixel to red (Red=255, Green=0, Blue=0)
-        # np[0] = wheel(counter, brightness)  # type: ignore # wheel through the colors
-        # np[1] = wheel(255 - counter, brightness)  # type: ignore # wheel backwards through the colors
         np.write()  # write data to all pixels
         counter = counter + 1 if counter < 255 else 0  # limit counter range from 0 - 255
         print("counter: ", counter)
-        sleep(0.1)
+        sleep(0.5)
+        for j in range(64):
+            np[j] = (0, 0, 0)
+        np.write()  # write data to all pixels
+        sleep(0.5)
     except KeyboardInterrupt:
         break
 np.fill((0, 0, 0))

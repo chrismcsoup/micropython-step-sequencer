@@ -257,6 +257,18 @@ esptool --port /dev/cu.usbmodem1411401  write-flash 0 '/my/path/to/ESP32_GENERIC
 ```
 
 
+## Run with mpremote
+
+```bash
+# generates the TLS certificates
+mise run gen_certs
+# copies the files defined in the package.json to the micropython device
+mpremote mip install src/plat_mcu/package.json
+# runs the wifi_ssl_test3.py script on the micropython device
+mpremote run src/plat_mcu/_test_and_debug_stuff/wifi_ssl_test3.py
+```
+
+
 ## TODO
 
 * create micropython package.json for the `mylib`

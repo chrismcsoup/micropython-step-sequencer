@@ -1,6 +1,9 @@
 [settings]
 python.uv_venv_auto = true
 
+[env]
+EDITOR = "vi"
+
 [tools]
 python = "3.13.2"
 
@@ -83,3 +86,22 @@ fi
 description = "Serve web prototype at http://localhost:8000"
 run = "python -m http.server 8000"
 dir = "src/plat_web"
+
+[tasks.gen_certs]
+description = "Generate SSL certificate and key for ESP32 (PEM and DER formats)"
+run = """
+# Generate self-signed certificate with IP SAN for ESP32 AP (192.168.4.1)
+# -x509: Output a self-signed certificate instead of a certificate request
+# -newkey rsa:2048: Generate a new 2048-bit RSA private key
+# -days 365: Certificate validity period (1 year)
+# -nodes: Don't encrypt the private key (no password)
+# -subj: Set certificate subject (CN must match IP or hostname)
+# -addext: Add Subject Alternative Name extension for IP address validation
+openssl req -x509 -newkey rsa:2048 -keyout src/plat_mcu/tls/key.pem -out src/plat_mcu/tls/cert.pem -days 365 -nodes -subj "/CN=192.168.4.1" -addext "subjectAltName=IP:192.168.4.1"
+
+# Convert certificate from PEM (ASCII) to DER (binary) format required by MicroPython's mbedTLS
+openssl x509 -in src/plat_mcu/tls/cert.pem -out src/plat_mcu/tls/cert.der -outform DER
+
+# Convert private key from PEM to DER format required by MicroPython's mbedTLS
+openssl rsa -in src/plat_mcu/tls/key.pem -out src/plat_mcu/tls/key.der -outform DER
+"""
