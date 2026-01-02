@@ -1,6 +1,7 @@
 """
 MicroPython entry point for Chord Machine.
-This file runs automatically when the MCU boots.
+
+Run this file on the ESP32-S3 to start the chord machine.
 """
 import asyncio
 from hal_mcu import create_mcu_hardware_port

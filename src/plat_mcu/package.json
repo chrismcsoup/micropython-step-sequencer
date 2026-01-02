@@ -3,7 +3,14 @@
     ["../utils/__init__.py", "utils/__init__.py"],
     ["../utils/button.py", "utils/button.py"],
     ["../main.py", "main.py"],
-    ["../boot.py", "boot.py"]
+    ["../boot.py", "boot.py"],
+    ["../hal_mcu.py", "hal_mcu.py"],
+    ["chord_machine/__init__.py", "../lib/chord_machine/__init__.py"],
+    ["chord_machine/music_theory.py", "../lib/chord_machine/music_theory.py"],
+    ["chord_machine/chord_engine.py", "../lib/chord_machine/chord_engine.py"],
+    ["chord_machine/ui_state.py", "../lib/chord_machine/ui_state.py"],
+    ["chord_machine/hal_protocol.py", "../lib/chord_machine/hal_protocol.py"],
+    ["chord_machine/chord_machine_app.py", "../lib/chord_machine/chord_machine_app.py"]
   ],
   "deps": [],
   "version": "0.1"

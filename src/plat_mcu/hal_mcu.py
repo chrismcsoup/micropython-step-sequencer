@@ -1,0 +1,447 @@
+"""
+MicroPython MCU Hardware Implementation.
+For ESP32-S3 with MCP23017 I/O expander, SSD1306 OLED, NeoPixel matrix, and TRS MIDI.
+
+This file contains all hardware-specific code. When changing hardware:
+1. Update PinConfig class with new pin assignments
+2. Modify HAL implementations if hardware interface differs
+3. Update create_mcu_hardware_port() factory function
+"""
+from machine import Pin, I2C
+from neopixel import NeoPixel
+from ssd1306 import SSD1306_I2C
+from lib.midi import Midi
+from lib.mcp23017 import MCP23017, Rotary
+from utils import Button
+
+from lib.chord_machine.hal_protocol import (
+    ButtonsHAL,
+    EncoderHAL,
+    DisplayHAL,
+    LedMatrixHAL,
+    MidiOutputHAL,
+    HardwarePort,
+)
+
+
+# ============================================================================
+# PIN CONFIGURATION - Change these when hardware changes
+# ============================================================================
+class PinConfig:
+    """
+    Centralized pin assignments for the MCU.
+    Modify this class when changing hardware connections.
+    """
+
+    # I2C Bus 0: MCP23017 I/O Expander
+    I2C_0_SCL = 6
+    I2C_0_SDA = 5
+    MCP_INTERRUPT = 4
+    MCP_ADDRESS = 0x20
+
+    # I2C Bus 1: OLED Display (separate bus)
+    OLED_I2C_ID = 1
+    OLED_SCL = 1
+    OLED_SDA = 2
+    OLED_WIDTH = 128
+    OLED_HEIGHT = 32
+
+    # NeoPixel LED Matrix (8x8 = 64 LEDs)
+    NEOPIXEL_PIN = 14
+    NEOPIXEL_COUNT = 64
+    NEOPIXEL_BRIGHTNESS = 0.1
+
+    # MIDI UART (TRS Type-A)
+    MIDI_TX = 39
+    MIDI_RX = 40
+    MIDI_UART_ID = 1
+
+    # MCP23017 pin assignments
+    # Port A (pins 0-7): Encoder and outputs
+    ENCODER_CLK = 7
+    ENCODER_DT = 6
+    ENCODER_SW = 5
+
+    # Port B (pins 8-15): 8 Buttons with internal pullups
+    BUTTON_PINS = [8, 9, 10, 11, 12, 13, 14, 15]
+
+
+# ============================================================================
+# HAL IMPLEMENTATIONS
+# ============================================================================
+
+
+class MCUButtonsHAL(ButtonsHAL):
+    """Button implementation using MCP23017 GPIO expander."""
+
+    def __init__(self, mcp, pin_numbers):
+        """
+        Args:
+            mcp: MCP23017 instance
+            pin_numbers: List of MCP23017 pin numbers for buttons
+        """
+        self.buttons = []
+        for pin_num in pin_numbers:
+            mcp.pin(pin_num, mode=1, pullup=True)  # Input with pullup
+            self.buttons.append(Button(mcp[pin_num]))
+
+    def update(self):
+        for btn in self.buttons:
+            btn.update()
+
+    def was_pressed(self, index):
+        if 0 <= index < len(self.buttons):
+            return self.buttons[index].was_pressed()
+        return False
+
+    def was_released(self, index):
+        if 0 <= index < len(self.buttons):
+            return self.buttons[index].was_released()
+        return False
+
+    def was_long_pressed(self, index):
+        if 0 <= index < len(self.buttons):
+            return self.buttons[index].was_long_pressed()
+        return False
+
+    def is_pressed(self, index):
+        if 0 <= index < len(self.buttons):
+            return self.buttons[index].is_pressed()
+        return False
+
+
+class MCUEncoderHAL(EncoderHAL):
+    """Rotary encoder implementation using MCP23017."""
+
+    def __init__(self, mcp, interrupt_pin, clk, dt, sw):
+        """
+        Args:
+            mcp: MCP23017 instance
+            interrupt_pin: ESP32 pin for MCP interrupt
+            clk: MCP23017 pin for encoder CLK
+            dt: MCP23017 pin for encoder DT
+            sw: MCP23017 pin for encoder switch
+        """
+        import time
+        self._value = 0
+        self._last_value = 0
+        self._button_pressed = False
+        self._last_button_time = 0
+        self._last_sw_state = 0  # Track previous switch state
+        self._debounce_ms = 300  # 300ms debounce for encoder button
+        self._time = time
+        self._invert_direction = True  # Invert rotation direction
+
+        def callback(val, sw):
+            self._value = val
+            # Only trigger on rising edge (0 -> 1) of switch
+            if sw == 1 and self._last_sw_state == 0:
+                # Debounce the button
+                now = self._time.ticks_ms()
+                if self._time.ticks_diff(now, self._last_button_time) > self._debounce_ms:
+                    self._button_pressed = True
+                    self._last_button_time = now
+            self._last_sw_state = sw
+
+        # Set min_val and max_val to allow full range
+        self.rotary = Rotary(mcp.porta, interrupt_pin, clk, dt, sw, callback,
+                             start_val=0, min_val=-1000, max_val=1000)
+        self.rotary.start()
+
+    def get_delta(self):
+        delta = self._value - self._last_value
+        self._last_value = self._value
+        # Invert direction if configured
+        if self._invert_direction:
+            delta = -delta
+        return delta
+
+    def was_button_pressed(self):
+        if self._button_pressed:
+            self._button_pressed = False
+            return True
+        return False
+
+    def get_value(self):
+        return self._value
+
+    def set_value(self, value):
+        self._value = value
+        self._last_value = value
+        self.rotary.value = value
+
+    def stop(self):
+        """Stop the encoder interrupt handler."""
+        self.rotary.stop()
+
+
+class MCUDisplayHAL(DisplayHAL):
+    """OLED display implementation using SSD1306."""
+
+    def __init__(self, i2c, width=128, height=32):
+        """
+        Args:
+            i2c: I2C instance
+            width: Display width in pixels
+            height: Display height in pixels
+        """
+        self.oled = SSD1306_I2C(width, height, i2c)
+        self.width = width
+        self.height = height
+        self._dirty = True
+        self._current_mode = "play"
+
+    def clear(self):
+        self.oled.fill(0)
+        self._dirty = True
+
+    def show_scale(self, scale_name, octave=None):
+        # Clear the scale area completely (both lines)
+        self.oled.fill_rect(0, 0, self.width, 20, 0)
+        self.oled.text("Scale:", 0, 0, 1)
+        
+        display_name = scale_name
+        
+        # Add octave indicator with tick marks after the root note if provided
+        if octave is not None:
+            # Use tick marks: octave 4 = no marks, higher = ', lower = ,
+            if octave > 4:
+                ticks = "'" * (octave - 4)
+            elif octave < 4:
+                ticks = "," * (4 - octave)
+            else:
+                ticks = ""
+            
+            if ticks:
+                # Find the first space (separates note name from scale type)
+                space_idx = display_name.find(" ")
+                if space_idx != -1:
+                    # Insert ticks after the note name: "C Major" -> "C'' Major"
+                    display_name = display_name[:space_idx] + ticks + display_name[space_idx:]
+                else:
+                    # No space found, just append
+                    display_name = display_name + ticks
+        
+        # Truncate if too long
+        if len(display_name) > 12:
+            display_name = display_name[:12]
+        
+        self.oled.text(display_name, 0, 10, 1)
+        # Redraw mode indicator since we cleared it
+        self._redraw_mode()
+        self._dirty = True
+
+    def show_chord(self, chord_name, numeral):
+        # Show chord on bottom half - clear that area first
+        self.oled.fill_rect(0, 20, self.width, 12, 0)
+        chord_text = numeral + " (" + chord_name + ")"
+        self.oled.text(chord_text, 0, 22, 1)
+        self._dirty = True
+
+    def show_message(self, message):
+        self.oled.fill(0)
+        # Center message vertically
+        y = (self.height - 8) // 2
+        if len(message) > 16:
+            display_msg = message[:16]
+        else:
+            display_msg = message
+        self.oled.text(display_msg, 0, y, 1)
+        self._dirty = True
+
+    def show_mode(self, mode):
+        self._current_mode = mode
+        self._redraw_mode()
+        self._dirty = True
+    
+    def _redraw_mode(self):
+        """Internal helper to redraw mode indicator."""
+        # Show mode indicator in top right - clear that area first
+        self.oled.fill_rect(self.width - 12, 0, 12, 10, 0)
+        mode_indicators = {"play": ">", "root_select": "#", "octave_select": "8"}
+        mode_char = mode_indicators.get(self._current_mode, "?")
+        self.oled.text(mode_char, self.width - 10, 0, 1)
+
+    def update(self):
+        if self._dirty:
+            self.oled.show()
+            self._dirty = False
+
+
+class MCULedMatrixHAL(LedMatrixHAL):
+    """NeoPixel 8x8 LED matrix implementation."""
+
+    def __init__(self, pin, count=64, brightness=0.1):
+        """
+        Args:
+            pin: GPIO Pin for NeoPixel data
+            count: Number of LEDs
+            brightness: Brightness multiplier 0.0-1.0
+        """
+        self.np = NeoPixel(pin, count)
+        self.count = count
+        self.brightness = brightness
+        self._dirty = False
+
+        # Predefined colors
+        self.COLORS = {
+            "off": (0, 0, 0),
+            "white": (255, 255, 255),
+            "red": (255, 0, 0),
+            "green": (0, 255, 0),
+            "blue": (0, 0, 255),
+            "yellow": (255, 255, 0),
+            "cyan": (0, 255, 255),
+            "magenta": (255, 0, 255),
+            "orange": (255, 128, 0),
+        }
+
+    def _apply_brightness(self, color):
+        """Apply brightness scaling to a color tuple."""
+        return tuple(int(c * self.brightness) for c in color)
+
+    def clear(self):
+        self.np.fill((0, 0, 0))
+        self._dirty = True
+
+    def set_button_led(self, index, color):
+        """Set LED for button - maps to first row of matrix."""
+        if 0 <= index < 8:
+            self.np[index] = self._apply_brightness(color)
+            self._dirty = True
+
+    def set_pixel(self, x, y, color):
+        """Set a specific pixel in the 8x8 matrix."""
+        if 0 <= x < 8 and 0 <= y < 8:
+            led_index = y * 8 + x
+            self.np[led_index] = self._apply_brightness(color)
+            self._dirty = True
+
+    def show_chord_visualization(self, notes, root_note):
+        """
+        Visualize chord notes on the matrix.
+        Each row represents one octave, columns represent pitch classes.
+        """
+        # Don't clear - just add chord visualization
+        for note in notes:
+            # Map MIDI note to matrix position
+            octave = (note // 12) % 8  # Row (0-7)
+            pitch_class = note % 12  # 0-11
+            col = int(pitch_class * 8 / 12)  # Scale 0-11 to 0-7
+
+            led_index = octave * 8 + col
+            if 0 <= led_index < self.count:
+                self.np[led_index] = self._apply_brightness(self.COLORS["cyan"])
+        self._dirty = True
+
+    def show_scale_indicator(self, scale_index, total_scales):
+        """Show which scale is selected using row 7 (bottom)."""
+        # Clear row 7
+        for x in range(8):
+            self.np[56 + x] = (0, 0, 0)
+
+        # Light up LED corresponding to current scale
+        if total_scales > 0:
+            led_pos = int(scale_index * 8 / total_scales)
+            self.np[56 + led_pos] = self._apply_brightness(self.COLORS["yellow"])
+        self._dirty = True
+
+    def update(self):
+        if self._dirty:
+            self.np.write()
+            self._dirty = False
+
+
+class MCUMidiOutputHAL(MidiOutputHAL):
+    """TRS MIDI output implementation using UART."""
+
+    def __init__(self, uart_id, tx_pin, rx_pin):
+        """
+        Args:
+            uart_id: UART peripheral ID
+            tx_pin: GPIO Pin for MIDI TX
+            rx_pin: GPIO Pin for MIDI RX
+        """
+        self.midi = Midi(uart_id, tx=tx_pin, rx=rx_pin)
+
+    def send_note_on(self, channel, note, velocity):
+        # Clamp note to valid MIDI range 0-127
+        if note < 0 or note > 127:
+            return  # Skip invalid notes
+        self.midi.send_note_on(channel, note, velocity=velocity)
+
+    def send_note_off(self, channel, note, velocity=0):
+        # Clamp note to valid MIDI range 0-127
+        if note < 0 or note > 127:
+            return  # Skip invalid notes
+        self.midi.send_note_off(channel, note)
+
+    def send_control_change(self, channel, control, value):
+        self.midi.send_control_change(channel, control, value)
+
+
+# ============================================================================
+# FACTORY FUNCTION
+# ============================================================================
+
+
+def create_mcu_hardware_port():
+    """
+    Factory function to create fully configured MCU hardware.
+
+    Returns:
+        HardwarePort instance with all HAL implementations configured
+    """
+    # Initialize I2C bus 0 for MCP23017
+    i2c_mcp = I2C(0, scl=Pin(PinConfig.I2C_0_SCL), sda=Pin(PinConfig.I2C_0_SDA))
+
+    # Initialize I2C bus 1 for OLED (separate bus)
+    i2c_oled = I2C(
+        PinConfig.OLED_I2C_ID,
+        scl=Pin(PinConfig.OLED_SCL),
+        sda=Pin(PinConfig.OLED_SDA),
+    )
+
+    # Initialize MCP23017
+    mcp = MCP23017(i2c_mcp, address=PinConfig.MCP_ADDRESS)
+
+    # Configure MCP port A pins for encoder (outputs and inputs)
+    for pin_num in range(8):
+        if pin_num in [PinConfig.ENCODER_CLK, PinConfig.ENCODER_DT, PinConfig.ENCODER_SW]:
+            mcp.pin(pin_num, mode=1, pullup=True)  # Input with pullup
+        else:
+            mcp.pin(pin_num, mode=0, value=0)  # Output
+
+    # Interrupt pin for encoder
+    interrupt_pin = Pin(PinConfig.MCP_INTERRUPT, mode=Pin.IN)
+
+    # Create HAL instances
+    buttons = MCUButtonsHAL(mcp, PinConfig.BUTTON_PINS)
+
+    encoder = MCUEncoderHAL(
+        mcp,
+        interrupt_pin,
+        PinConfig.ENCODER_CLK,
+        PinConfig.ENCODER_DT,
+        PinConfig.ENCODER_SW,
+    )
+
+    display = MCUDisplayHAL(
+        i2c_oled,  # OLED on separate I2C bus
+        PinConfig.OLED_WIDTH,
+        PinConfig.OLED_HEIGHT,
+    )
+
+    led_matrix = MCULedMatrixHAL(
+        Pin(PinConfig.NEOPIXEL_PIN, Pin.OUT),
+        PinConfig.NEOPIXEL_COUNT,
+        PinConfig.NEOPIXEL_BRIGHTNESS,
+    )
+
+    midi_output = MCUMidiOutputHAL(
+        PinConfig.MIDI_UART_ID,
+        Pin(PinConfig.MIDI_TX),
+        Pin(PinConfig.MIDI_RX),
+    )
+
+    return HardwarePort(buttons, encoder, display, led_matrix, midi_output)
