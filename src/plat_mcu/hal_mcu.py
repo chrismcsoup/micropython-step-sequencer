@@ -198,36 +198,39 @@ class MCUDisplayHAL(DisplayHAL):
     def show_scale(self, scale_name, octave=None):
         # Clear the scale area completely (both lines)
         self.oled.fill_rect(0, 0, self.width, 20, 0)
-        self.oled.text("Scale:", 0, 0, 1)
         
-        display_name = scale_name
+        # Parse scale name to separate root note from scale type
+        # e.g., "C Major" -> "C" and "Major"
+        space_idx = scale_name.find(" ")
+        if space_idx != -1:
+            root_note = scale_name[:space_idx]
+            scale_type = scale_name[space_idx + 1:]
+        else:
+            root_note = scale_name
+            scale_type = ""
         
-        # Add octave indicator with tick marks after the root note if provided
+        # Add octave indicator with tick marks after the root note
         if octave is not None:
-            # Use tick marks: octave 4 = no marks, higher = ', lower = ,
             if octave > 4:
                 ticks = "'" * (octave - 4)
             elif octave < 4:
                 ticks = "," * (4 - octave)
             else:
                 ticks = ""
-            
-            if ticks:
-                # Find the first space (separates note name from scale type)
-                space_idx = display_name.find(" ")
-                if space_idx != -1:
-                    # Insert ticks after the note name: "C Major" -> "C'' Major"
-                    display_name = display_name[:space_idx] + ticks + display_name[space_idx:]
-                else:
-                    # No space found, just append
-                    display_name = display_name + ticks
+            root_note = root_note + ticks
         
-        # Truncate if too long
-        if len(display_name) > 12:
-            display_name = display_name[:12]
+        # Line 1: "Scale: C'''''" (up to 16 chars total)
+        line1 = "Scale: " + root_note
+        if len(line1) > 16:
+            line1 = line1[:16]
+        self.oled.text(line1, 0, 0, 1)
         
-        self.oled.text(display_name, 0, 10, 1)
-        # Redraw mode indicator since we cleared it
+        # Line 2: Scale type (e.g., "Locrian") - leave room for mode indicator
+        if len(scale_type) > 14:
+            scale_type = scale_type[:14]
+        self.oled.text(scale_type, 0, 10, 1)
+        
+        # Redraw mode indicator on line 2
         self._redraw_mode()
         self._dirty = True
 
