@@ -7,10 +7,8 @@ from utils import Button
 led_pin = Pin(14, Pin.OUT)  # set GPIO0 to output to drive NeoPixels
 np = NeoPixel(led_pin, 64)  # create NeoPixel driver on GPIO0 for 2 pixels
 
-
-#button1 = Pin(6, Pin.IN, Pin.PULL_UP)  # button to GND
-
-button1 = Button(6)
+# button1 = Button(Pin(7, Pin.IN, Pin.PULL_UP)). # Pin is created outside Button class
+button1 = Button(7) # pin is created inside Button class
 
 brightness = 0.1
 

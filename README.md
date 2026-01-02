@@ -217,7 +217,8 @@ microcontroller with micropython flashed connected to the computer.
 $ mise tasks
 Name        Description                                                    
 deploy_all  Deploy boot.py, main.py and libs to the MCU                    
-deploy_lib  deploy the library to the device                               
+deploy_lib  deploy the library to the device
+deploy_src  deploy the src files to the device                               
 format      Format the code                                                
 lint        Lint the code                                                  
 run_local   Run locally (computer)                                         
@@ -263,7 +264,7 @@ esptool --port /dev/cu.usbmodem1411401  write-flash 0 '/my/path/to/ESP32_GENERIC
 # generates the TLS certificates
 mise run gen_certs
 # copies the files defined in the package.json to the micropython device
-mpremote mip install src/plat_mcu/package.json
+mise run deploy_all
 # runs the wifi_ssl_test3.py script on the micropython device
 mpremote run src/plat_mcu/_test_and_debug_stuff/wifi_ssl_test3.py
 ```

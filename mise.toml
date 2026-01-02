@@ -31,6 +31,14 @@ run = """
 mpremote mip install src/plat_mcu/package_libs.json
 """
 
+[tasks.deploy_src]
+description = 'deploy the library to the device'
+run = """
+#!/usr/bin/env bash
+
+mpremote mip install src/plat_mcu/package.json
+"""
+
 [tasks.deploy_all]
 depends = ["deploy_lib"]
 description = "Deploy boot.py, main.py and libs to the MCU"

@@ -11,7 +11,14 @@ class Button:
         debounce_ms=30,
         long_press_ms=600,
     ):
-        self.pin = Pin(pin, Pin.IN, pull)
+        # Support both direct pin numbers (ESP32) and pin objects (MCP23017)
+        if isinstance(pin, int):
+            # Direct ESP32 pin - create a Pin object
+            self.pin = Pin(pin, Pin.IN, pull)
+        else:
+            # Pin-like object (e.g., MCP23017 VirtualPin)
+            # Assume it's already configured externally
+            self.pin = pin
 
         self.debounce_ms = debounce_ms
         self.long_press_ms = long_press_ms

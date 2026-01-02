@@ -2,6 +2,9 @@
   "urls": [
         ["ssd1306/__init__.py", "../../lib/ssd1306/__init__.py"],
         ["midi/__init__.py", "../../lib/midi/__init__.py"],
+        ["mcp23017/__init__.py", "../../lib/mcp23017/__init__.py"],
+        ["mcp23017/mcp23017.py", "../../lib/mcp23017/mcp23017.py"],
+        ["mcp23017/rotary.py", "../../lib/mcp23017/rotary.py"],
         ["tls/key.pem", "tls/key.pem"],
         ["tls/cert.pem", "tls/cert.pem"],
         ["tls/key.der", "tls/key.der"],
