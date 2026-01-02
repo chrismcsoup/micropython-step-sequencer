@@ -39,8 +39,9 @@ class ChordMachineApp:
         self.midi_channel = midi_channel
         self.velocity = velocity
 
-        # Track active notes for proper note-off
-        self._active_notes = []
+        # Track active notes per chord degree for proper note-off
+        # Key: degree (0-6), Value: list of MIDI note numbers
+        self._active_notes_by_degree = {}
 
         # Subscribe to UI events
         self._setup_event_handlers()
@@ -52,30 +53,49 @@ class ChordMachineApp:
         """Connect UI state events to hardware actions."""
 
         def on_chord_triggered(data):
+            degree = data["degree"]
+            notes = data["notes"]
+            
             # Send MIDI
             self.hw.midi_output.send_chord_on(
-                self.midi_channel, data["notes"], self.velocity
+                self.midi_channel, notes, self.velocity
             )
-            self._active_notes = list(data["notes"])
+            # Store notes for this specific degree
+            self._active_notes_by_degree[degree] = list(notes)
 
             # Update LEDs
-            self.hw.led_matrix.set_button_led(data["degree"], Color.CHORD_ACTIVE)
+            self.hw.led_matrix.set_button_led(degree, Color.CHORD_ACTIVE)
             self.hw.led_matrix.show_chord_visualization(
-                data["notes"], self.chord_engine.root_note
+                notes, self.chord_engine.root_note
             )
 
             # Update display
             self.hw.display.show_chord(data["name"], data["numeral"])
 
         def on_chord_released(data):
-            # Send MIDI note offs
-            if self._active_notes:
-                self.hw.midi_output.send_chord_off(self.midi_channel, self._active_notes)
-                self._active_notes = []
+            degree = data["degree"]
+            
+            # Send MIDI note offs for this specific degree's notes
+            if degree in self._active_notes_by_degree:
+                self.hw.midi_output.send_chord_off(
+                    self.midi_channel, self._active_notes_by_degree[degree]
+                )
+                del self._active_notes_by_degree[degree]
 
             # Update LEDs
-            self.hw.led_matrix.set_button_led(data["degree"], Color.OFF)
+            self.hw.led_matrix.set_button_led(degree, Color.OFF)
+            
+            # Always clear the note visualization first
             self.hw.led_matrix.clear()
+            
+            # Then re-draw remaining active chord notes if any
+            if self._active_notes_by_degree:
+                remaining_notes = []
+                for notes in self._active_notes_by_degree.values():
+                    remaining_notes.extend(notes)
+                self.hw.led_matrix.show_chord_visualization(
+                    remaining_notes, self.chord_engine.root_note
+                )
 
         def on_scale_changed(data):
             self._update_display()
@@ -161,10 +181,10 @@ class ChordMachineApp:
 
     def cleanup(self):
         """Clean shutdown - turn off all notes and LEDs."""
-        # Send note offs for any active notes
-        if self._active_notes:
-            self.hw.midi_output.send_chord_off(self.midi_channel, self._active_notes)
-            self._active_notes = []
+        # Send note offs for any active notes (all degrees)
+        for degree, notes in self._active_notes_by_degree.items():
+            self.hw.midi_output.send_chord_off(self.midi_channel, notes)
+        self._active_notes_by_degree = {}
 
         # Clear all LEDs
         self.hw.led_matrix.clear()

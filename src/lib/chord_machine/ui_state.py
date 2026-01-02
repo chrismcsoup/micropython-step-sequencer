@@ -106,10 +106,13 @@ class UIState:
         Args:
             degree: Scale degree 0-6
         """
-        if self.active_chord_degree == degree:
-            self.active_chord_degree = None
+        # Always emit the release event so note-off is sent
         self.led_states[degree] = False
         self.emit(Event.CHORD_RELEASED, {"degree": degree})
+        
+        # Only clear active_chord_degree if this was the active one
+        if self.active_chord_degree == degree:
+            self.active_chord_degree = None
 
     def update_encoder(self, delta):
         """
