@@ -2,6 +2,7 @@
 UI State management - platform independent.
 Manages application state and provides event-driven architecture.
 """
+from .constants import Mode
 
 
 class Event:
@@ -32,7 +33,7 @@ class UIState:
         self.current_scale_index = chord_engine.scale_index
         self.active_chord_degree = None  # 0-6 or None
         self.encoder_value = 0
-        self.mode = "play"  # "play", "root_select", or "scale_select"
+        self.mode = Mode.PLAY
 
         # Visual state
         self.led_states = [False] * 8  # 8 buttons worth of LED feedback
@@ -124,7 +125,7 @@ class UIState:
         )
 
         # Behavior depends on current mode
-        if self.mode == "play":
+        if self.mode == Mode.PLAY:
             # In play mode, encoder changes octave
             self.chord_engine.change_octave(delta)
             self.display_dirty = True
@@ -135,7 +136,7 @@ class UIState:
                  "octave": self.chord_engine.octave},
             )
 
-        elif self.mode == "root_select":
+        elif self.mode == Mode.ROOT_SELECT:
             # In root select mode, encoder cycles through note names (C, C#, D, etc.)
             self.chord_engine.cycle_root_note(delta)
             self.display_dirty = True
@@ -146,7 +147,7 @@ class UIState:
                  "octave": self.chord_engine.octave},
             )
         
-        elif self.mode == "scale_select":
+        elif self.mode == Mode.SCALE_SELECT:
             # In scale select mode, encoder changes scale
             if delta > 0:
                 self.chord_engine.next_scale()
@@ -156,15 +157,14 @@ class UIState:
 
     def toggle_mode(self):
         """Toggle between play, root_select, and scale_select modes."""
-        modes = ["play", "root_select", "scale_select"]
-        current_idx = modes.index(self.mode)
-        self.mode = modes[(current_idx + 1) % len(modes)]
+        current_idx = Mode.ALL.index(self.mode)
+        self.mode = Mode.ALL[(current_idx + 1) % len(Mode.ALL)]
         self.display_dirty = True
         self.emit(Event.MODE_CHANGED, {"mode": self.mode})
 
     def set_mode(self, mode):
         """Set a specific mode."""
-        if mode in ["play", "root_select", "scale_select"]:
+        if mode in Mode.ALL:
             self.mode = mode
             self.display_dirty = True
             self.emit(Event.MODE_CHANGED, {"mode": self.mode})

@@ -20,6 +20,7 @@ try:
     )
     from chord_machine.chord_engine import ChordEngine
     from chord_machine.ui_state import UIState, Event
+    from chord_machine.constants import Mode
 except ImportError:
     # Try relative import for running from project root
     sys.path.insert(0, "../src/lib")
@@ -32,6 +33,7 @@ except ImportError:
     )
     from chord_machine.chord_engine import ChordEngine
     from chord_machine.ui_state import UIState, Event
+    from chord_machine.constants import Mode
 
 
 class TestMusicTheory:
@@ -196,16 +198,16 @@ class TestUIState:
         engine = ChordEngine()
         state = UIState(engine)
         
-        assert state.mode == "play"
+        assert state.mode == Mode.PLAY
         
         state.toggle_mode()
-        assert state.mode == "root_select"
+        assert state.mode == Mode.ROOT_SELECT
         
         state.toggle_mode()
-        assert state.mode == "scale_select"
+        assert state.mode == Mode.SCALE_SELECT
         
         state.toggle_mode()
-        assert state.mode == "play"
+        assert state.mode == Mode.PLAY
 
     def test_display_data(self):
         """Test display data generation."""

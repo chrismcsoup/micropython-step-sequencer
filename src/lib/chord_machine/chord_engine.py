@@ -10,6 +10,7 @@ from .music_theory import (
     get_chord_quality_in_scale,
     get_scale_names,
 )
+from .constants import Octave, Music
 
 
 class ChordEngine:
@@ -25,8 +26,8 @@ class ChordEngine:
             scale_name: Name of scale to use
         """
         # Split root_note into note (0-11) and octave
-        self._root_note_class = root_note % 12  # 0=C, 1=C#, etc.
-        self._octave = root_note // 12  # MIDI octave number
+        self._root_note_class = root_note % Music.NOTES_PER_OCTAVE  # 0=C, 1=C#, etc.
+        self._octave = root_note // Music.NOTES_PER_OCTAVE  # MIDI octave number
         
         self._scale_name = scale_name
         self._scale_index = 0
@@ -39,7 +40,7 @@ class ChordEngine:
     @property
     def root_note(self):
         """Get the root note as MIDI note number."""
-        return self._octave * 12 + self._root_note_class
+        return self._octave * Music.NOTES_PER_OCTAVE + self._root_note_class
     
     @property
     def octave(self):
@@ -77,7 +78,7 @@ class ChordEngine:
 
     def get_scale_display_name(self):
         """Return formatted scale name for display."""
-        root_name = NOTE_NAMES[self.root_note % 12]
+        root_name = NOTE_NAMES[self.root_note % Music.NOTES_PER_OCTAVE]
         # MicroPython: no .title() method, capitalize first letter of each word manually
         scale_words = self._scale_name.replace("_", " ").split(" ")
         capitalized = []
@@ -103,7 +104,7 @@ class ChordEngine:
             - roman_numeral: e.g., "ii", "vii°"
         """
         if not 0 <= degree <= 6:
-            degree = degree % 7
+            degree = degree % Music.SCALE_DEGREES
 
         scale = SCALES[self._scale_name]
         quality = get_chord_quality_in_scale(self._scale_name, degree)
@@ -116,7 +117,7 @@ class ChordEngine:
         chord_notes = [chord_root + interval for interval in chord_intervals]
 
         # Build chord name
-        root_name = NOTE_NAMES[chord_root % 12]
+        root_name = NOTE_NAMES[chord_root % Music.NOTES_PER_OCTAVE]
         suffixes = {
             "major": "",
             "minor": "m",
@@ -137,7 +138,7 @@ class ChordEngine:
 
     def get_all_chords_in_scale(self):
         """Return info for all 7 diatonic chords."""
-        return [self.get_chord(i) for i in range(7)]
+        return [self.get_chord(i) for i in range(Music.SCALE_DEGREES)]
 
     def next_scale(self):
         """Cycle to next scale, return new scale name."""
@@ -151,18 +152,17 @@ class ChordEngine:
 
     def set_root_note_class(self, note_class):
         """Set the root note class (0-11, where 0=C, 1=C#, etc.)."""
-        self._root_note_class = note_class % 12
+        self._root_note_class = note_class % Music.NOTES_PER_OCTAVE
     
     def cycle_root_note(self, delta):
         """Cycle root note within the octave."""
-        self._root_note_class = (self._root_note_class + delta) % 12
+        self._root_note_class = (self._root_note_class + delta) % Music.NOTES_PER_OCTAVE
     
     def set_octave(self, octave):
-        """Set the octave (clamped to safe range 2-9)."""
-        # Octave 2 (C2 = MIDI 24) to Octave 9 (C9 = MIDI 108)
-        self._octave = max(2, min(9, octave))
+        """Set the octave (clamped to safe range)."""
+        self._octave = max(Octave.MIN, min(Octave.MAX, octave))
     
     def change_octave(self, delta):
-        """Change octave by delta semitones."""
+        """Change octave by delta steps."""
         new_octave = self._octave + delta
-        self._octave = max(2, min(9, new_octave))
+        self._octave = max(Octave.MIN, min(Octave.MAX, new_octave))

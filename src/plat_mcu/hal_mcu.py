@@ -22,6 +22,14 @@ from lib.chord_machine.hal_protocol import (
     MidiOutputHAL,
     HardwarePort,
 )
+from lib.chord_machine.constants import (
+    Mode,
+    ModeIndicator,
+    Color,
+    Octave,
+    Hardware,
+    Midi as MidiConst,
+)
 
 
 # ============================================================================
@@ -128,7 +136,7 @@ class MCUEncoderHAL(EncoderHAL):
         self._button_pressed = False
         self._last_button_time = 0
         self._last_sw_state = 0  # Track previous switch state
-        self._debounce_ms = 300  # 300ms debounce for encoder button
+        self._debounce_ms = Hardware.ENCODER_DEBOUNCE_MS
         self._time = time
         self._invert_direction = True  # Invert rotation direction
 
@@ -145,7 +153,9 @@ class MCUEncoderHAL(EncoderHAL):
 
         # Set min_val and max_val to allow full range
         self.rotary = Rotary(mcp.porta, interrupt_pin, clk, dt, sw, callback,
-                             start_val=0, min_val=-1000, max_val=1000)
+                             start_val=Hardware.ENCODER_START, 
+                             min_val=Hardware.ENCODER_MIN, 
+                             max_val=Hardware.ENCODER_MAX)
         self.rotary.start()
 
     def get_delta(self):
@@ -189,7 +199,7 @@ class MCUDisplayHAL(DisplayHAL):
         self.width = width
         self.height = height
         self._dirty = True
-        self._current_mode = "play"
+        self._current_mode = Mode.PLAY
 
     def clear(self):
         self.oled.fill(0)
@@ -211,18 +221,18 @@ class MCUDisplayHAL(DisplayHAL):
         
         # Add octave indicator with tick marks after the root note
         if octave is not None:
-            if octave > 4:
-                ticks = "'" * (octave - 4)
-            elif octave < 4:
-                ticks = "," * (4 - octave)
+            if octave > Octave.REFERENCE:
+                ticks = Octave.TICK_UP * (octave - Octave.REFERENCE)
+            elif octave < Octave.REFERENCE:
+                ticks = Octave.TICK_DOWN * (Octave.REFERENCE - octave)
             else:
                 ticks = ""
             root_note = root_note + ticks
         
         # Line 1: "Scale: C'''''" (up to 16 chars total)
         line1 = "Scale: " + root_note
-        if len(line1) > 16:
-            line1 = line1[:16]
+        if len(line1) > Hardware.DISPLAY_MAX_CHARS:
+            line1 = line1[:Hardware.DISPLAY_MAX_CHARS]
         self.oled.text(line1, 0, 0, 1)
         
         # Line 2: Scale type (e.g., "Locrian") - leave room for mode indicator
@@ -261,8 +271,7 @@ class MCUDisplayHAL(DisplayHAL):
         """Internal helper to redraw mode indicator."""
         # Show mode indicator in top right - clear that area first
         self.oled.fill_rect(self.width - 12, 0, 12, 10, 0)
-        mode_indicators = {"play": ">", "root_select": "#", "scale_select": "*"}
-        mode_char = mode_indicators.get(self._current_mode, "?")
+        mode_char = ModeIndicator.get(self._current_mode)
         self.oled.text(mode_char, self.width - 10, 0, 1)
 
     def update(self):
@@ -274,7 +283,7 @@ class MCUDisplayHAL(DisplayHAL):
 class MCULedMatrixHAL(LedMatrixHAL):
     """NeoPixel 8x8 LED matrix implementation."""
 
-    def __init__(self, pin, count=64, brightness=0.1):
+    def __init__(self, pin, count=Hardware.MATRIX_LED_COUNT, brightness=0.1):
         """
         Args:
             pin: GPIO Pin for NeoPixel data
@@ -286,37 +295,24 @@ class MCULedMatrixHAL(LedMatrixHAL):
         self.brightness = brightness
         self._dirty = False
 
-        # Predefined colors
-        self.COLORS = {
-            "off": (0, 0, 0),
-            "white": (255, 255, 255),
-            "red": (255, 0, 0),
-            "green": (0, 255, 0),
-            "blue": (0, 0, 255),
-            "yellow": (255, 255, 0),
-            "cyan": (0, 255, 255),
-            "magenta": (255, 0, 255),
-            "orange": (255, 128, 0),
-        }
-
     def _apply_brightness(self, color):
         """Apply brightness scaling to a color tuple."""
         return tuple(int(c * self.brightness) for c in color)
 
     def clear(self):
-        self.np.fill((0, 0, 0))
+        self.np.fill(Color.OFF)
         self._dirty = True
 
     def set_button_led(self, index, color):
         """Set LED for button - maps to first row of matrix."""
-        if 0 <= index < 8:
+        if 0 <= index < Hardware.MATRIX_WIDTH:
             self.np[index] = self._apply_brightness(color)
             self._dirty = True
 
     def set_pixel(self, x, y, color):
         """Set a specific pixel in the 8x8 matrix."""
-        if 0 <= x < 8 and 0 <= y < 8:
-            led_index = y * 8 + x
+        if 0 <= x < Hardware.MATRIX_WIDTH and 0 <= y < Hardware.MATRIX_HEIGHT:
+            led_index = y * Hardware.MATRIX_WIDTH + x
             self.np[led_index] = self._apply_brightness(color)
             self._dirty = True
 
@@ -328,25 +324,26 @@ class MCULedMatrixHAL(LedMatrixHAL):
         # Don't clear - just add chord visualization
         for note in notes:
             # Map MIDI note to matrix position
-            octave = (note // 12) % 8  # Row (0-7)
+            octave = (note // 12) % Hardware.MATRIX_HEIGHT  # Row (0-7)
             pitch_class = note % 12  # 0-11
-            col = int(pitch_class * 8 / 12)  # Scale 0-11 to 0-7
+            col = int(pitch_class * Hardware.MATRIX_WIDTH / 12)  # Scale 0-11 to 0-7
 
-            led_index = octave * 8 + col
+            led_index = octave * Hardware.MATRIX_WIDTH + col
             if 0 <= led_index < self.count:
-                self.np[led_index] = self._apply_brightness(self.COLORS["cyan"])
+                self.np[led_index] = self._apply_brightness(Color.CYAN)
         self._dirty = True
 
     def show_scale_indicator(self, scale_index, total_scales):
         """Show which scale is selected using row 7 (bottom)."""
         # Clear row 7
-        for x in range(8):
-            self.np[56 + x] = (0, 0, 0)
+        row_start = (Hardware.MATRIX_HEIGHT - 1) * Hardware.MATRIX_WIDTH
+        for x in range(Hardware.MATRIX_WIDTH):
+            self.np[row_start + x] = Color.OFF
 
         # Light up LED corresponding to current scale
         if total_scales > 0:
-            led_pos = int(scale_index * 8 / total_scales)
-            self.np[56 + led_pos] = self._apply_brightness(self.COLORS["yellow"])
+            led_pos = int(scale_index * Hardware.MATRIX_WIDTH / total_scales)
+            self.np[row_start + led_pos] = self._apply_brightness(Color.YELLOW)
         self._dirty = True
 
     def update(self):
@@ -368,14 +365,14 @@ class MCUMidiOutputHAL(MidiOutputHAL):
         self.midi = Midi(uart_id, tx=tx_pin, rx=rx_pin)
 
     def send_note_on(self, channel, note, velocity):
-        # Clamp note to valid MIDI range 0-127
-        if note < 0 or note > 127:
+        # Clamp note to valid MIDI range
+        if note < MidiConst.NOTE_MIN or note > MidiConst.NOTE_MAX:
             return  # Skip invalid notes
         self.midi.send_note_on(channel, note, velocity=velocity)
 
     def send_note_off(self, channel, note, velocity=0):
-        # Clamp note to valid MIDI range 0-127
-        if note < 0 or note > 127:
+        # Clamp note to valid MIDI range
+        if note < MidiConst.NOTE_MIN or note > MidiConst.NOTE_MAX:
             return  # Skip invalid notes
         self.midi.send_note_off(channel, note)
 

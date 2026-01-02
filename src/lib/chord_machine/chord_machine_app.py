@@ -5,6 +5,7 @@ Platform-independent - receives hardware through dependency injection.
 """
 from .chord_engine import ChordEngine
 from .ui_state import UIState, Event
+from .constants import Color, Mode, Midi as MidiConst, Hardware
 
 
 class ChordMachineApp:
@@ -13,13 +14,9 @@ class ChordMachineApp:
     Platform-independent - receives hardware through dependency injection.
     """
 
-    # Color constants for LED feedback
-    COLOR_OFF = (0, 0, 0)
-    COLOR_CHORD_ACTIVE = (0, 255, 0)  # Green when chord playing
-    COLOR_MODE_PLAY = (0, 0, 50)  # Dim blue for play mode
-    COLOR_MODE_SETTINGS = (50, 50, 0)  # Dim yellow for settings
-
-    def __init__(self, hardware, midi_channel=0, velocity=100, root_note=60):
+    def __init__(self, hardware, midi_channel=MidiConst.CHANNEL_MIN, 
+                 velocity=MidiConst.VELOCITY_DEFAULT, 
+                 root_note=MidiConst.DEFAULT_ROOT_NOTE):
         """
         Initialize the Chord Machine.
 
@@ -30,7 +27,7 @@ class ChordMachineApp:
             root_note: Default root note (60 = C4)
         """
         # Business logic
-        self.chord_engine = ChordEngine(root_note=root_note, scale_name="major")
+        self.chord_engine = ChordEngine(root_note=root_note, scale_name=MidiConst.DEFAULT_SCALE)
 
         # UI State
         self.ui_state = UIState(self.chord_engine)
@@ -62,7 +59,7 @@ class ChordMachineApp:
             self._active_notes = list(data["notes"])
 
             # Update LEDs
-            self.hw.led_matrix.set_button_led(data["degree"], self.COLOR_CHORD_ACTIVE)
+            self.hw.led_matrix.set_button_led(data["degree"], Color.CHORD_ACTIVE)
             self.hw.led_matrix.show_chord_visualization(
                 data["notes"], self.chord_engine.root_note
             )
@@ -77,7 +74,7 @@ class ChordMachineApp:
                 self._active_notes = []
 
             # Update LEDs
-            self.hw.led_matrix.set_button_led(data["degree"], self.COLOR_OFF)
+            self.hw.led_matrix.set_button_led(data["degree"], Color.OFF)
             self.hw.led_matrix.clear()
 
         def on_scale_changed(data):
@@ -86,12 +83,13 @@ class ChordMachineApp:
         def on_mode_changed(data):
             self._update_display()
             # Show mode indicator on LEDs
-            mode_color = (
-                self.COLOR_MODE_PLAY
-                if data["mode"] == "play"
-                else self.COLOR_MODE_SETTINGS
-            )
-            self.hw.led_matrix.set_button_led(7, mode_color)
+            mode_colors = {
+                Mode.PLAY: Color.MODE_PLAY,
+                Mode.ROOT_SELECT: Color.MODE_ROOT_SELECT,
+                Mode.SCALE_SELECT: Color.MODE_SCALE_SELECT,
+            }
+            mode_color = mode_colors.get(data["mode"], Color.MODE_PLAY)
+            self.hw.led_matrix.set_button_led(Hardware.SPECIAL_BUTTON_INDEX, mode_color)
 
         def on_root_changed(data):
             self._update_display()
@@ -131,11 +129,11 @@ class ChordMachineApp:
         # Check encoder button for mode toggle
         if self.hw.encoder.was_button_pressed():
             self.ui_state.toggle_mode()
-            self.hw.encoder.set_value(0)
+            self.hw.encoder.set_value(Hardware.ENCODER_START)
 
         # Check each button (0-6 for chords I-VII, 7 for special)
-        for i in range(8):
-            if i < 7:  # Chord buttons
+        for i in range(Hardware.TOTAL_BUTTONS):
+            if i < Hardware.NUM_CHORD_BUTTONS:  # Chord buttons
                 if self.hw.buttons.was_pressed(i):
                     self.ui_state.trigger_chord(i)
 
@@ -145,8 +143,9 @@ class ChordMachineApp:
                 # Button 8 (index 7) for special functions
                 if self.hw.buttons.was_long_pressed(i):
                     # Reset to default scale
-                    self.chord_engine.scale_name = "major"
-                    self.chord_engine.root_note = 60
+                    self.chord_engine.scale_name = MidiConst.DEFAULT_SCALE
+                    self.chord_engine.set_octave(MidiConst.DEFAULT_ROOT_NOTE // 12)
+                    self.chord_engine.set_root_note_class(MidiConst.DEFAULT_ROOT_NOTE % 12)
                     self.ui_state.set_scale(0)
 
                 if self.hw.buttons.was_pressed(i):
@@ -177,8 +176,8 @@ class ChordMachineApp:
 
     def set_velocity(self, velocity):
         """Set the default velocity for notes."""
-        self.velocity = max(0, min(127, velocity))
+        self.velocity = max(MidiConst.VELOCITY_MIN, min(MidiConst.VELOCITY_MAX, velocity))
 
     def set_midi_channel(self, channel):
         """Set the MIDI channel."""
-        self.midi_channel = max(0, min(15, channel))
+        self.midi_channel = max(MidiConst.CHANNEL_MIN, min(MidiConst.CHANNEL_MAX, channel))
