@@ -1,8 +1,8 @@
 from sys import path
 
-path.append("lib")
+
 from time import sleep_ms
-from mylib import add
+from lib.mylib import add
 
 while True:
     print(f"1 + 2 = {add(1, 2)}")

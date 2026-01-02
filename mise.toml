@@ -28,18 +28,7 @@ description = 'deploy the library to the device'
 run = """
 #!/usr/bin/env bash
 
-if ! mpremote fs ls lib &>/dev/null; then
-    echo "Creating the lib directory on the device"
-    mpremote fs mkdir lib
-fi
-echo "Deploying libraries to the device..."
-for entry in ./lib/*; do
-    if [ -e "$entry" ]; then
-        echo "Copying $(basename "$entry")..."
-        mpremote cp --no-verbose -r "$entry" :lib
-    fi
-done
-mpremote cp --no-verbose -r ./src/mylib :lib
+mpremote mip install src/plat_mcu/package_libs.json
 """
 
 [tasks.deploy_all]
@@ -47,15 +36,7 @@ depends = ["deploy_lib"]
 description = "Deploy boot.py, main.py and libs to the MCU"
 run = """
 #!/usr/bin/env bash
-if [ -f "./src/main.py" ]; then
-    echo "Copying main.py..."
-    mpremote cp --no-verbose ./src/main.py :/
-fi
-
-if [ -f "./src/boot.py" ]; then
-    echo "Copying boot.py..."
-    mpremote cp --no-verbose ./src/boot.py :/
-fi
+mpremote mip install src/plat_mcu/package.json
 """
 
 
@@ -105,3 +86,5 @@ openssl x509 -in src/plat_mcu/tls/cert.pem -out src/plat_mcu/tls/cert.der -outfo
 # Convert private key from PEM to DER format required by MicroPython's mbedTLS
 openssl rsa -in src/plat_mcu/tls/key.pem -out src/plat_mcu/tls/key.der -outform DER
 """
+
+
