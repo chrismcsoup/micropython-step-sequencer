@@ -32,7 +32,7 @@ class UIState:
         self.current_scale_index = chord_engine.scale_index
         self.active_chord_degree = None  # 0-6 or None
         self.encoder_value = 0
-        self.mode = "play"  # "play", "root_select", or "octave_select"
+        self.mode = "play"  # "play", "root_select", or "scale_select"
 
         # Visual state
         self.led_states = [False] * 8  # 8 buttons worth of LED feedback
@@ -125,12 +125,15 @@ class UIState:
 
         # Behavior depends on current mode
         if self.mode == "play":
-            # In play mode, encoder changes scale
-            if delta > 0:
-                self.chord_engine.next_scale()
-            else:
-                self.chord_engine.prev_scale()
-            self.set_scale(self.chord_engine.scale_index)
+            # In play mode, encoder changes octave
+            self.chord_engine.change_octave(delta)
+            self.display_dirty = True
+            self.emit(
+                Event.ROOT_CHANGED,
+                {"root_note": self.chord_engine.root_note,
+                 "root_note_class": self.chord_engine.root_note_class,
+                 "octave": self.chord_engine.octave},
+            )
 
         elif self.mode == "root_select":
             # In root select mode, encoder cycles through note names (C, C#, D, etc.)
@@ -143,20 +146,17 @@ class UIState:
                  "octave": self.chord_engine.octave},
             )
         
-        elif self.mode == "octave_select":
-            # In octave select mode, encoder changes the octave
-            self.chord_engine.change_octave(delta)
-            self.display_dirty = True
-            self.emit(
-                Event.ROOT_CHANGED,
-                {"root_note": self.chord_engine.root_note,
-                 "root_note_class": self.chord_engine.root_note_class,
-                 "octave": self.chord_engine.octave},
-            )
+        elif self.mode == "scale_select":
+            # In scale select mode, encoder changes scale
+            if delta > 0:
+                self.chord_engine.next_scale()
+            else:
+                self.chord_engine.prev_scale()
+            self.set_scale(self.chord_engine.scale_index)
 
     def toggle_mode(self):
-        """Toggle between play, root_select, and octave_select modes."""
-        modes = ["play", "root_select", "octave_select"]
+        """Toggle between play, root_select, and scale_select modes."""
+        modes = ["play", "root_select", "scale_select"]
         current_idx = modes.index(self.mode)
         self.mode = modes[(current_idx + 1) % len(modes)]
         self.display_dirty = True
@@ -164,7 +164,7 @@ class UIState:
 
     def set_mode(self, mode):
         """Set a specific mode."""
-        if mode in ["play", "root_select", "octave_select"]:
+        if mode in ["play", "root_select", "scale_select"]:
             self.mode = mode
             self.display_dirty = True
             self.emit(Event.MODE_CHANGED, {"mode": self.mode})

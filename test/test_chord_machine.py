@@ -202,7 +202,7 @@ class TestUIState:
         assert state.mode == "root_select"
         
         state.toggle_mode()
-        assert state.mode == "octave_select"
+        assert state.mode == "scale_select"
         
         state.toggle_mode()
         assert state.mode == "play"

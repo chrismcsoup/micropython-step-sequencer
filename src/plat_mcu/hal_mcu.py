@@ -261,7 +261,7 @@ class MCUDisplayHAL(DisplayHAL):
         """Internal helper to redraw mode indicator."""
         # Show mode indicator in top right - clear that area first
         self.oled.fill_rect(self.width - 12, 0, 12, 10, 0)
-        mode_indicators = {"play": ">", "root_select": "#", "octave_select": "8"}
+        mode_indicators = {"play": ">", "root_select": "#", "scale_select": "*"}
         mode_char = mode_indicators.get(self._current_mode, "?")
         self.oled.text(mode_char, self.width - 10, 0, 1)
 
