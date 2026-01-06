@@ -208,6 +208,59 @@ class LedMatrixHAL:
         raise NotImplementedError
 
 
+class TouchStripHAL:
+    """Abstract interface for capacitive touch strip (MPR121 with 12 pads)."""
+
+    def update(self):
+        """Poll touch states. Call in main loop."""
+        raise NotImplementedError
+
+    def get_touched(self):
+        """
+        Get bitmask of currently touched pads.
+
+        Returns:
+            Integer bitmask where bit N is set if pad N is touched
+        """
+        raise NotImplementedError
+
+    def was_touched(self, pad):
+        """
+        Check if pad was just touched (newly pressed).
+
+        Args:
+            pad: Pad index 0-11
+
+        Returns:
+            True if pad was touched since last update
+        """
+        raise NotImplementedError
+
+    def was_released(self, pad):
+        """
+        Check if pad was just released.
+
+        Args:
+            pad: Pad index 0-11
+
+        Returns:
+            True if pad was released since last update
+        """
+        raise NotImplementedError
+
+    def is_touched(self, pad):
+        """
+        Check if pad is currently touched.
+
+        Args:
+            pad: Pad index 0-11
+
+        Returns:
+            True if pad is currently touched
+        """
+        raise NotImplementedError
+
+
 class MidiOutputHAL:
     """Abstract interface for MIDI output."""
 
@@ -282,6 +335,7 @@ class HardwarePort:
         display,
         led_matrix,
         midi_output,
+        touch_strip=None,
     ):
         """
         Args:
@@ -290,16 +344,20 @@ class HardwarePort:
             display: DisplayHAL implementation
             led_matrix: LedMatrixHAL implementation
             midi_output: MidiOutputHAL implementation
+            touch_strip: Optional TouchStripHAL implementation
         """
         self.buttons = buttons
         self.encoder = encoder
         self.display = display
         self.led_matrix = led_matrix
         self.midi_output = midi_output
+        self.touch_strip = touch_strip
 
     def update_inputs(self):
         """Poll all input devices."""
         self.buttons.update()
+        if self.touch_strip:
+            self.touch_strip.update()
 
     def update_outputs(self):
         """Push all output changes."""

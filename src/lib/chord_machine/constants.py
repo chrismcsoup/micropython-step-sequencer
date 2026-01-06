@@ -126,6 +126,9 @@ class Hardware:
     DISPLAY_WIDTH = 128
     DISPLAY_HEIGHT = 32
     DISPLAY_MAX_CHARS = 16
+    
+    # Touch strip (MPR121)
+    TOUCH_PAD_COUNT = 12
 
 
 # ============================================================================

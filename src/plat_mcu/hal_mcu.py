@@ -12,6 +12,7 @@ from neopixel import NeoPixel
 from ssd1306 import SSD1306_I2C
 from lib.midi import Midi
 from lib.mcp23017 import MCP23017, Rotary
+from lib.mpr121 import MPR121
 from utils import Button
 
 from lib.chord_machine.hal_protocol import (
@@ -20,6 +21,7 @@ from lib.chord_machine.hal_protocol import (
     DisplayHAL,
     LedMatrixHAL,
     MidiOutputHAL,
+    TouchStripHAL,
     HardwarePort,
 )
 from lib.chord_machine.constants import (
@@ -63,6 +65,11 @@ class PinConfig:
     MIDI_TX = 39
     MIDI_RX = 40
     MIDI_UART_ID = 1
+
+    # Touch Strip (MPR121) - uses same I2C bus as OLED
+    TOUCH_I2C_ID = 1
+    TOUCH_ADDRESS = 0x5A
+    TOUCH_PAD_COUNT = 12
 
     # MCP23017 pin assignments
     # Port A (pins 0-7): Encoder and outputs
@@ -380,6 +387,53 @@ class MCUMidiOutputHAL(MidiOutputHAL):
         self.midi.send_control_change(channel, control, value)
 
 
+class MCUTouchStripHAL(TouchStripHAL):
+    """Capacitive touch strip implementation using MPR121."""
+
+    def __init__(self, i2c, address=0x5A):
+        """
+        Args:
+            i2c: I2C instance
+            address: MPR121 I2C address (default 0x5A)
+        """
+        self.mpr = MPR121(i2c, address)
+        self._last_touched = 0
+        self._current_touched = 0
+        self._just_touched = 0
+        self._just_released = 0
+
+    def update(self):
+        """Poll touch sensor and update state."""
+        self._last_touched = self._current_touched
+        self._current_touched = self.mpr.touched()
+        
+        # Calculate edges
+        self._just_touched = self._current_touched & ~self._last_touched
+        self._just_released = self._last_touched & ~self._current_touched
+
+    def get_touched(self):
+        """Get bitmask of currently touched pads."""
+        return self._current_touched
+
+    def was_touched(self, pad):
+        """Check if pad was just touched."""
+        if 0 <= pad < 12:
+            return bool(self._just_touched & (1 << pad))
+        return False
+
+    def was_released(self, pad):
+        """Check if pad was just released."""
+        if 0 <= pad < 12:
+            return bool(self._just_released & (1 << pad))
+        return False
+
+    def is_touched(self, pad):
+        """Check if pad is currently touched."""
+        if 0 <= pad < 12:
+            return bool(self._current_touched & (1 << pad))
+        return False
+
+
 # ============================================================================
 # FACTORY FUNCTION
 # ============================================================================
@@ -444,4 +498,10 @@ def create_mcu_hardware_port():
         Pin(PinConfig.MIDI_RX),
     )
 
-    return HardwarePort(buttons, encoder, display, led_matrix, midi_output)
+    # Touch strip uses same I2C bus as OLED
+    touch_strip = MCUTouchStripHAL(
+        i2c_oled,
+        PinConfig.TOUCH_ADDRESS,
+    )
+
+    return HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip)

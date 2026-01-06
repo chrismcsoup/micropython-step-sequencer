@@ -14,6 +14,8 @@ class Event:
     ENCODER_CHANGED = "encoder_changed"
     MODE_CHANGED = "mode_changed"
     ROOT_CHANGED = "root_changed"
+    NOTE_TRIGGERED = "note_triggered"
+    NOTE_RELEASED = "note_released"
 
 
 class UIState:
@@ -113,6 +115,45 @@ class UIState:
         # Only clear active_chord_degree if this was the active one
         if self.active_chord_degree == degree:
             self.active_chord_degree = None
+
+    def trigger_note(self, pad_index):
+        """
+        Trigger a single note from touch strip.
+
+        Args:
+            pad_index: Touch pad index 0-11 (maps to scale degrees)
+        """
+        note = self.chord_engine.get_scale_note(pad_index)
+        note_name = self._get_note_name(note)
+        self.emit(
+            Event.NOTE_TRIGGERED,
+            {
+                "pad": pad_index,
+                "note": note,
+                "name": note_name,
+            },
+        )
+
+    def release_note(self, pad_index):
+        """
+        Release a single note from touch strip.
+
+        Args:
+            pad_index: Touch pad index 0-11
+        """
+        note = self.chord_engine.get_scale_note(pad_index)
+        self.emit(
+            Event.NOTE_RELEASED,
+            {
+                "pad": pad_index,
+                "note": note,
+            },
+        )
+
+    def _get_note_name(self, midi_note):
+        """Get note name from MIDI note number."""
+        note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        return note_names[midi_note % 12]
 
     def update_encoder(self, delta):
         """

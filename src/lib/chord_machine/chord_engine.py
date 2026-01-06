@@ -140,6 +140,25 @@ class ChordEngine:
         """Return info for all 7 diatonic chords."""
         return [self.get_chord(i) for i in range(Music.SCALE_DEGREES)]
 
+    def get_scale_note(self, degree):
+        """
+        Get MIDI note number for a scale degree.
+        Supports extended degrees beyond the 7-note scale (wraps with octaves).
+
+        Args:
+            degree: Scale degree 0-11 (or higher)
+                    0 = root note
+                    7 = root note + 1 octave
+                    etc.
+
+        Returns:
+            MIDI note number
+        """
+        scale = SCALES[self._scale_name]
+        octave_offset = degree // Music.SCALE_DEGREES
+        scale_degree = degree % Music.SCALE_DEGREES
+        return self.root_note + scale[scale_degree] + (octave_offset * Music.NOTES_PER_OCTAVE)
+
     def next_scale(self):
         """Cycle to next scale, return new scale name."""
         self.scale_index = (self._scale_index + 1) % len(self._available_scales)

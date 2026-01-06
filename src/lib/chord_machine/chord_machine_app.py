@@ -43,6 +43,10 @@ class ChordMachineApp:
         # Key: degree (0-6), Value: list of MIDI note numbers
         self._active_notes_by_degree = {}
 
+        # Track active notes per touch pad for proper note-off
+        # Key: pad (0-11), Value: MIDI note number
+        self._active_notes_by_pad = {}
+
         # Subscribe to UI events
         self._setup_event_handlers()
 
@@ -114,12 +118,56 @@ class ChordMachineApp:
         def on_root_changed(data):
             self._update_display()
 
+        def on_note_triggered(data):
+            """Handle single note from touch strip."""
+            pad = data["pad"]
+            note = data["note"]
+            
+            # Send MIDI note on
+            self.hw.midi_output.send_note_on(
+                self.midi_channel, note, self.velocity
+            )
+            # Store note for this pad
+            self._active_notes_by_pad[pad] = note
+
+            # Visual feedback on LED matrix
+            self.hw.led_matrix.show_chord_visualization(
+                [note], self.chord_engine.root_note
+            )
+
+        def on_note_released(data):
+            """Handle single note release from touch strip."""
+            pad = data["pad"]
+            
+            # Send MIDI note off for this pad's note
+            if pad in self._active_notes_by_pad:
+                self.hw.midi_output.send_note_off(
+                    self.midi_channel, self._active_notes_by_pad[pad]
+                )
+                del self._active_notes_by_pad[pad]
+            
+            # Clear visualization if no more active notes
+            if not self._active_notes_by_pad and not self._active_notes_by_degree:
+                self.hw.led_matrix.clear()
+            elif self._active_notes_by_pad or self._active_notes_by_degree:
+                # Redraw remaining active notes
+                self.hw.led_matrix.clear()
+                remaining_notes = list(self._active_notes_by_pad.values())
+                for notes in self._active_notes_by_degree.values():
+                    remaining_notes.extend(notes)
+                if remaining_notes:
+                    self.hw.led_matrix.show_chord_visualization(
+                        remaining_notes, self.chord_engine.root_note
+                    )
+
         # Register handlers
         self.ui_state.subscribe(Event.CHORD_TRIGGERED, on_chord_triggered)
         self.ui_state.subscribe(Event.CHORD_RELEASED, on_chord_released)
         self.ui_state.subscribe(Event.SCALE_CHANGED, on_scale_changed)
         self.ui_state.subscribe(Event.MODE_CHANGED, on_mode_changed)
         self.ui_state.subscribe(Event.ROOT_CHANGED, on_root_changed)
+        self.ui_state.subscribe(Event.NOTE_TRIGGERED, on_note_triggered)
+        self.ui_state.subscribe(Event.NOTE_RELEASED, on_note_released)
 
     def _update_display(self):
         """Update display with current state."""
@@ -172,6 +220,14 @@ class ChordMachineApp:
                     # Toggle mode on short press
                     self.ui_state.toggle_mode()
 
+        # Check touch strip for note input (if available)
+        if self.hw.touch_strip:
+            for pad in range(Hardware.TOUCH_PAD_COUNT):
+                if self.hw.touch_strip.was_touched(pad):
+                    self.ui_state.trigger_note(pad)
+                if self.hw.touch_strip.was_released(pad):
+                    self.ui_state.release_note(pad)
+
         # Update display if dirty
         if self.ui_state.display_dirty:
             self._update_display()
@@ -181,10 +237,15 @@ class ChordMachineApp:
 
     def cleanup(self):
         """Clean shutdown - turn off all notes and LEDs."""
-        # Send note offs for any active notes (all degrees)
+        # Send note offs for any active chord notes (all degrees)
         for degree, notes in self._active_notes_by_degree.items():
             self.hw.midi_output.send_chord_off(self.midi_channel, notes)
         self._active_notes_by_degree = {}
+
+        # Send note offs for any active touch strip notes
+        for pad, note in self._active_notes_by_pad.items():
+            self.hw.midi_output.send_note_off(self.midi_channel, note)
+        self._active_notes_by_pad = {}
 
         # Clear all LEDs
         self.hw.led_matrix.clear()

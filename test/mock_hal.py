@@ -8,6 +8,7 @@ from lib.chord_machine.hal_protocol import (
     DisplayHAL,
     LedMatrixHAL,
     MidiOutputHAL,
+    TouchStripHAL,
     HardwarePort,
 )
 
@@ -205,9 +206,62 @@ class MockMidiOutputHAL(MidiOutputHAL):
         self.messages = []
 
 
-def create_mock_hardware_port():
+class MockTouchStripHAL(TouchStripHAL):
+    """Mock touch strip that can be programmatically triggered."""
+
+    def __init__(self, count=12):
+        self.count = count
+        self._touched = [False] * count
+        self._released = [False] * count
+        self._current = [False] * count
+
+    def simulate_touch(self, pad):
+        """Simulate a touch on a pad."""
+        if 0 <= pad < self.count:
+            self._touched[pad] = True
+            self._current[pad] = True
+
+    def simulate_release(self, pad):
+        """Simulate a release on a pad."""
+        if 0 <= pad < self.count:
+            self._released[pad] = True
+            self._current[pad] = False
+
+    def update(self):
+        pass
+
+    def get_touched(self):
+        """Get bitmask of currently touched pads."""
+        result = 0
+        for i, touched in enumerate(self._current):
+            if touched:
+                result |= (1 << i)
+        return result
+
+    def was_touched(self, pad):
+        if 0 <= pad < self.count and self._touched[pad]:
+            self._touched[pad] = False
+            return True
+        return False
+
+    def was_released(self, pad):
+        if 0 <= pad < self.count and self._released[pad]:
+            self._released[pad] = False
+            return True
+        return False
+
+    def is_touched(self, pad):
+        if 0 <= pad < self.count:
+            return self._current[pad]
+        return False
+
+
+def create_mock_hardware_port(include_touch_strip=True):
     """
     Factory function to create a mock hardware port for testing.
+    
+    Args:
+        include_touch_strip: Whether to include the touch strip mock (default True)
     
     Returns:
         Tuple of (HardwarePort, dict of individual mocks)
@@ -217,8 +271,9 @@ def create_mock_hardware_port():
     display = MockDisplayHAL()
     led_matrix = MockLedMatrixHAL()
     midi_output = MockMidiOutputHAL()
+    touch_strip = MockTouchStripHAL() if include_touch_strip else None
 
-    port = HardwarePort(buttons, encoder, display, led_matrix, midi_output)
+    port = HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip)
 
     mocks = {
         "buttons": buttons,
@@ -226,6 +281,7 @@ def create_mock_hardware_port():
         "display": display,
         "led_matrix": led_matrix,
         "midi_output": midi_output,
+        "touch_strip": touch_strip,
     }
 
     return port, mocks

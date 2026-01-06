@@ -153,6 +153,39 @@ class TestChordEngine:
             assert isinstance(name, str)
             assert isinstance(numeral, str)
 
+    def test_get_scale_note_root(self):
+        """Test getting root note from scale."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        # Pad 0 should be root note (C4 = 60)
+        assert engine.get_scale_note(0) == 60
+
+    def test_get_scale_note_degrees(self):
+        """Test getting scale notes for all degrees in C major."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        # C major scale: C D E F G A B
+        expected = [60, 62, 64, 65, 67, 69, 71]
+        for degree in range(7):
+            note = engine.get_scale_note(degree)
+            assert note == expected[degree], "Degree " + str(degree) + ": expected " + str(expected[degree]) + ", got " + str(note)
+
+    def test_get_scale_note_extended_degrees(self):
+        """Test scale notes wrap to next octave for degrees 7-11."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        # Degrees 7-11 should wrap to next octave
+        # Degree 7 = root + octave = 72
+        assert engine.get_scale_note(7) == 72  # C5
+        assert engine.get_scale_note(8) == 74  # D5
+        assert engine.get_scale_note(9) == 76  # E5
+
+    def test_get_scale_note_minor(self):
+        """Test scale notes in natural minor."""
+        engine = ChordEngine(root_note=60, scale_name="natural_minor")
+        # C natural minor: C D Eb F G Ab Bb
+        expected = [60, 62, 63, 65, 67, 68, 70]
+        for degree in range(7):
+            note = engine.get_scale_note(degree)
+            assert note == expected[degree], "Degree " + str(degree) + ": expected " + str(expected[degree]) + ", got " + str(note)
+
 
 class TestUIState:
     """Tests for UI state management."""
@@ -224,6 +257,57 @@ class TestUIState:
         data = state.get_display_data()
         assert data["active_chord"] is not None
         assert data["active_chord"]["name"] == "C"
+
+    def test_note_trigger_and_release(self):
+        """Test touch strip note triggering and releasing."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        triggered = []
+        released = []
+        
+        state.subscribe(Event.NOTE_TRIGGERED, lambda d: triggered.append(d))
+        state.subscribe(Event.NOTE_RELEASED, lambda d: released.append(d))
+        
+        # Trigger pad 0 (root note)
+        state.trigger_note(0)
+        assert len(triggered) == 1
+        assert triggered[0]["pad"] == 0
+        assert triggered[0]["note"] == 60  # C4
+        assert triggered[0]["name"] == "C"
+        
+        # Release pad 0
+        state.release_note(0)
+        assert len(released) == 1
+        assert released[0]["pad"] == 0
+        assert released[0]["note"] == 60
+
+    def test_note_trigger_different_pads(self):
+        """Test triggering different touch pads."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        notes = []
+        state.subscribe(Event.NOTE_TRIGGERED, lambda d: notes.append(d["note"]))
+        
+        # Trigger pads 0, 2, 4 (C major triad: C, E, G)
+        state.trigger_note(0)
+        state.trigger_note(2)
+        state.trigger_note(4)
+        
+        assert notes == [60, 64, 67]  # C, E, G
+
+    def test_note_trigger_extended_range(self):
+        """Test touch pads in extended range (7-11)."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        notes = []
+        state.subscribe(Event.NOTE_TRIGGERED, lambda d: notes.append(d["note"]))
+        
+        # Trigger pad 7 (octave above root)
+        state.trigger_note(7)
+        assert notes[0] == 72  # C5
 
 
 def run_tests():
