@@ -207,6 +207,7 @@ class MCUDisplayHAL(DisplayHAL):
         self.height = height
         self._dirty = True
         self._current_mode = Mode.PLAY
+        self._hold_active = False
 
     def clear(self):
         self.oled.fill(0)
@@ -252,8 +253,8 @@ class MCUDisplayHAL(DisplayHAL):
         self._dirty = True
 
     def show_chord(self, chord_name, numeral):
-        # Show chord on bottom half - clear that area first
-        self.oled.fill_rect(0, 20, self.width, 12, 0)
+        # Show chord on bottom half - clear that area but leave room for hold indicator
+        self.oled.fill_rect(0, 20, self.width - 12, 12, 0)
         chord_text = numeral + " (" + chord_name + ")"
         self.oled.text(chord_text, 0, 22, 1)
         self._dirty = True
@@ -280,6 +281,15 @@ class MCUDisplayHAL(DisplayHAL):
         self.oled.fill_rect(self.width - 12, 0, 12, 10, 0)
         mode_char = ModeIndicator.get(self._current_mode)
         self.oled.text(mode_char, self.width - 10, 0, 1)
+
+    def show_hold_indicator(self, is_holding):
+        """Display chord hold mode indicator in bottom right."""
+        self._hold_active = is_holding
+        # Clear bottom right area
+        self.oled.fill_rect(self.width - 12, self.height - 10, 12, 10, 0)
+        if is_holding:
+            self.oled.text("H", self.width - 10, self.height - 8, 1)
+        self._dirty = True
 
     def update(self):
         if self._dirty:

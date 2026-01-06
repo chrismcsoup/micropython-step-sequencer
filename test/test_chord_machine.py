@@ -309,6 +309,102 @@ class TestUIState:
         state.trigger_note(7)
         assert notes[0] == 72  # C5
 
+    def test_chord_hold_toggle(self):
+        """Test toggling chord hold mode."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        assert state.chord_hold == False
+        
+        hold_events = []
+        state.subscribe(Event.CHORD_HOLD_CHANGED, lambda d: hold_events.append(d))
+        
+        state.toggle_chord_hold()
+        assert state.chord_hold == True
+        assert len(hold_events) == 1
+        assert hold_events[0]["chord_hold"] == True
+        
+        state.toggle_chord_hold()
+        assert state.chord_hold == False
+
+    def test_chord_hold_keeps_chord_on_release(self):
+        """Test that chord stays held when button is released in hold mode."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        released = []
+        state.subscribe(Event.CHORD_RELEASED, lambda d: released.append(d))
+        
+        # Enable chord hold
+        state.toggle_chord_hold()
+        
+        # Trigger and release chord
+        state.trigger_chord(0)
+        state.release_chord(0)
+        
+        # Should NOT have released the chord
+        assert len(released) == 0
+        assert state.held_chord_degree == 0
+
+    def test_chord_hold_switches_chords(self):
+        """Test that pressing new chord releases previous in hold mode."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        triggered = []
+        released = []
+        state.subscribe(Event.CHORD_TRIGGERED, lambda d: triggered.append(d["degree"]))
+        state.subscribe(Event.CHORD_RELEASED, lambda d: released.append(d["degree"]))
+        
+        # Enable chord hold
+        state.toggle_chord_hold()
+        
+        # Trigger first chord
+        state.trigger_chord(0)
+        assert triggered == [0]
+        assert released == []
+        
+        # Trigger second chord - should release first
+        state.trigger_chord(2)
+        assert triggered == [0, 2]
+        assert released == [0]
+        assert state.held_chord_degree == 2
+
+    def test_chord_hold_deactivate_releases(self):
+        """Test that deactivating hold mode releases held chord."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        released = []
+        state.subscribe(Event.CHORD_RELEASED, lambda d: released.append(d["degree"]))
+        
+        # Enable chord hold and trigger chord
+        state.toggle_chord_hold()
+        state.trigger_chord(3)
+        state.release_chord(3)  # Button release, but chord stays held
+        
+        assert len(released) == 0
+        
+        # Disable chord hold - should release the held chord
+        state.toggle_chord_hold()
+        
+        assert len(released) == 1
+        assert released[0] == 3
+        assert state.held_chord_degree is None
+
+    def test_display_data_includes_chord_hold(self):
+        """Test that display data includes chord hold state."""
+        engine = ChordEngine(root_note=60, scale_name="major")
+        state = UIState(engine)
+        
+        data = state.get_display_data()
+        assert "chord_hold" in data
+        assert data["chord_hold"] == False
+        
+        state.toggle_chord_hold()
+        data = state.get_display_data()
+        assert data["chord_hold"] == True
+
 
 def run_tests():
     """Run all tests and report results."""

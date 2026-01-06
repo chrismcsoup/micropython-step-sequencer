@@ -150,6 +150,15 @@ class DisplayHAL:
         """
         raise NotImplementedError
 
+    def show_hold_indicator(self, is_holding):
+        """
+        Display chord hold mode indicator.
+
+        Args:
+            is_holding: True if chord hold mode is active
+        """
+        raise NotImplementedError
+
     def update(self):
         """Push changes to display hardware."""
         raise NotImplementedError

@@ -118,6 +118,15 @@ class ChordMachineApp:
         def on_root_changed(data):
             self._update_display()
 
+        def on_chord_hold_changed(data):
+            """Handle chord hold mode toggle."""
+            self._update_display()
+            # Show hold indicator on special button LED
+            if data["chord_hold"]:
+                self.hw.led_matrix.set_button_led(Hardware.SPECIAL_BUTTON_INDEX, Color.YELLOW)
+            else:
+                self.hw.led_matrix.set_button_led(Hardware.SPECIAL_BUTTON_INDEX, Color.OFF)
+
         def on_note_triggered(data):
             """Handle single note from touch strip."""
             pad = data["pad"]
@@ -166,6 +175,7 @@ class ChordMachineApp:
         self.ui_state.subscribe(Event.SCALE_CHANGED, on_scale_changed)
         self.ui_state.subscribe(Event.MODE_CHANGED, on_mode_changed)
         self.ui_state.subscribe(Event.ROOT_CHANGED, on_root_changed)
+        self.ui_state.subscribe(Event.CHORD_HOLD_CHANGED, on_chord_hold_changed)
         self.ui_state.subscribe(Event.NOTE_TRIGGERED, on_note_triggered)
         self.ui_state.subscribe(Event.NOTE_RELEASED, on_note_released)
 
@@ -174,6 +184,9 @@ class ChordMachineApp:
         display_data = self.ui_state.get_display_data()
         self.hw.display.show_scale(display_data["scale_name"], display_data["octave"])
         self.hw.display.show_mode(display_data["mode"])
+        # Show chord hold indicator
+        if hasattr(self.hw.display, 'show_hold_indicator'):
+            self.hw.display.show_hold_indicator(display_data["chord_hold"])
         if display_data["active_chord"]:
             self.hw.display.show_chord(
                 display_data["active_chord"]["name"],
@@ -214,11 +227,12 @@ class ChordMachineApp:
                     self.chord_engine.scale_name = MidiConst.DEFAULT_SCALE
                     self.chord_engine.set_octave(MidiConst.DEFAULT_ROOT_NOTE // 12)
                     self.chord_engine.set_root_note_class(MidiConst.DEFAULT_ROOT_NOTE % 12)
-                    self.ui_state.set_scale(0)
+                    # Use the engine's scale_index which was updated by setting scale_name
+                    self.ui_state.set_scale(self.chord_engine.scale_index)
 
                 if self.hw.buttons.was_pressed(i):
-                    # Toggle mode on short press
-                    self.ui_state.toggle_mode()
+                    # Toggle chord hold mode on short press
+                    self.ui_state.toggle_chord_hold()
 
         # Check touch strip for note input (if available)
         if self.hw.touch_strip:

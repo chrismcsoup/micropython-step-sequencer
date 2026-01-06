@@ -114,6 +114,7 @@ class MockDisplayHAL(DisplayHAL):
         self.current_numeral = ""
         self.current_message = ""
         self.current_mode = ""
+        self.hold_active = False
 
     def clear(self):
         self.calls.append(("clear",))
@@ -121,8 +122,8 @@ class MockDisplayHAL(DisplayHAL):
         self.current_chord = ""
         self.current_numeral = ""
 
-    def show_scale(self, scale_name):
-        self.calls.append(("show_scale", scale_name))
+    def show_scale(self, scale_name, octave=None):
+        self.calls.append(("show_scale", scale_name, octave))
         self.current_scale = scale_name
 
     def show_chord(self, chord_name, numeral):
@@ -137,6 +138,10 @@ class MockDisplayHAL(DisplayHAL):
     def show_mode(self, mode):
         self.calls.append(("show_mode", mode))
         self.current_mode = mode
+
+    def show_hold_indicator(self, is_holding):
+        self.calls.append(("show_hold_indicator", is_holding))
+        self.hold_active = is_holding
 
     def update(self):
         self.calls.append(("update",))

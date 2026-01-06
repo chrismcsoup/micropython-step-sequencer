@@ -16,6 +16,7 @@ class Event:
     ROOT_CHANGED = "root_changed"
     NOTE_TRIGGERED = "note_triggered"
     NOTE_RELEASED = "note_released"
+    CHORD_HOLD_CHANGED = "chord_hold_changed"
 
 
 class UIState:
@@ -36,6 +37,8 @@ class UIState:
         self.active_chord_degree = None  # 0-6 or None
         self.encoder_value = 0
         self.mode = Mode.PLAY
+        self.chord_hold = False  # Chord hold mode
+        self.held_chord_degree = None  # The chord being held in chord hold mode
 
         # Visual state
         self.led_states = [False] * 8  # 8 buttons worth of LED feedback
@@ -87,10 +90,22 @@ class UIState:
         Args:
             degree: Scale degree 0-6
         """
+        # In chord hold mode, release any previously held chord first
+        if self.chord_hold and self.held_chord_degree is not None:
+            if self.held_chord_degree != degree:
+                # Release the previously held chord
+                self.led_states[self.held_chord_degree] = False
+                self.emit(Event.CHORD_RELEASED, {"degree": self.held_chord_degree})
+        
         self.active_chord_degree = degree
         self.led_states[degree] = True
         chord_notes, chord_name, numeral = self.chord_engine.get_chord(degree)
         self.display_dirty = True
+        
+        # In chord hold mode, remember this as the held chord
+        if self.chord_hold:
+            self.held_chord_degree = degree
+        
         self.emit(
             Event.CHORD_TRIGGERED,
             {
@@ -108,6 +123,11 @@ class UIState:
         Args:
             degree: Scale degree 0-6
         """
+        # In chord hold mode, don't release if this is the held chord
+        if self.chord_hold and self.held_chord_degree == degree:
+            # Keep the chord held - don't emit release event
+            return
+        
         # Always emit the release event so note-off is sent
         self.led_states[degree] = False
         self.emit(Event.CHORD_RELEASED, {"degree": degree})
@@ -213,6 +233,24 @@ class UIState:
             self.display_dirty = True
             self.emit(Event.MODE_CHANGED, {"mode": self.mode})
 
+    def toggle_chord_hold(self):
+        """
+        Toggle chord hold mode.
+        When deactivating, releases any held chord.
+        """
+        self.chord_hold = not self.chord_hold
+        self.display_dirty = True
+        
+        if not self.chord_hold and self.held_chord_degree is not None:
+            # Release the held chord when deactivating hold mode
+            degree = self.held_chord_degree
+            self.led_states[degree] = False
+            self.emit(Event.CHORD_RELEASED, {"degree": degree})
+            self.held_chord_degree = None
+            self.active_chord_degree = None
+        
+        self.emit(Event.CHORD_HOLD_CHANGED, {"chord_hold": self.chord_hold})
+
     def get_display_data(self):
         """
         Get data needed for display rendering.
@@ -232,6 +270,7 @@ class UIState:
             "root_note": self.chord_engine.root_note,
             "root_note_class": self.chord_engine.root_note_class,
             "octave": self.chord_engine.octave,
+            "chord_hold": self.chord_hold,
         }
 
     def clear_display_dirty(self):
