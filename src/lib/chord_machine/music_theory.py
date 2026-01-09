@@ -101,3 +101,45 @@ def get_chord_quality_in_scale(scale_name, degree):
         return "augmented"
     else:
         return "major"  # fallback
+
+
+def get_scale_semitones(scale_name):
+    """
+    Get set of semitones (0-11) that are in the scale.
+    
+    Args:
+        scale_name: Name of the scale
+        
+    Returns:
+        Set of semitone values (0-11) in the scale
+    """
+    return set(SCALES.get(scale_name, SCALES["major"]))
+
+
+def get_chord_semitones(scale_name, chord_degree):
+    """
+    Get set of semitones (0-11) that are in the chord for a given scale degree.
+    
+    Args:
+        scale_name: Name of the scale
+        chord_degree: Scale degree 0-6 (I-VII), or None for no chord
+        
+    Returns:
+        Set of semitone values (0-11) in the chord
+    """
+    if chord_degree is None:
+        return set()
+    
+    scale_intervals = SCALES.get(scale_name, SCALES["major"])
+    quality = get_chord_quality_in_scale(scale_name, chord_degree)
+    chord_type = CHORD_TYPES[quality]
+    
+    # Get the root note's semitone offset in the scale
+    chord_root_semitone = scale_intervals[chord_degree]
+    
+    # Build chord semitones (mod 12 to stay in 0-11 range)
+    chord_semitones = set()
+    for interval in chord_type:
+        chord_semitones.add((chord_root_semitone + interval) % 12)
+    
+    return chord_semitones

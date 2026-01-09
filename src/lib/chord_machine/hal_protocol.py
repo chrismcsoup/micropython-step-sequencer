@@ -270,6 +270,36 @@ class TouchStripHAL:
         raise NotImplementedError
 
 
+class TouchStripLedHAL:
+    """Abstract interface for LED strip above touch strip (WS2812 with 24 LEDs)."""
+
+    def clear(self):
+        """Turn off all LEDs."""
+        raise NotImplementedError
+
+    def update_scale_and_chord(
+        self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
+    ):
+        """
+        Update LEDs to show scale notes and chord notes.
+
+        Each touch pad has 2 LEDs:
+        - First LED (even index): lights up if that chromatic note is in the scale
+        - Second LED (odd index): lights up if that chromatic note is in the active chord
+
+        Args:
+            scale_semitones: Set of semitones (0-11) that are in the current scale
+            chord_semitones: Set of semitones (0-11) that are in the active chord
+            scale_color: RGB tuple for scale notes (default blue)
+            chord_color: RGB tuple for chord notes (default green)
+        """
+        raise NotImplementedError
+
+    def update(self):
+        """Push changes to LED hardware."""
+        raise NotImplementedError
+
+
 class MidiOutputHAL:
     """Abstract interface for MIDI output."""
 
@@ -345,6 +375,7 @@ class HardwarePort:
         led_matrix,
         midi_output,
         touch_strip=None,
+        touch_strip_led=None,
     ):
         """
         Args:
@@ -354,6 +385,7 @@ class HardwarePort:
             led_matrix: LedMatrixHAL implementation
             midi_output: MidiOutputHAL implementation
             touch_strip: Optional TouchStripHAL implementation
+            touch_strip_led: Optional TouchStripLedHAL implementation
         """
         self.buttons = buttons
         self.encoder = encoder
@@ -361,6 +393,7 @@ class HardwarePort:
         self.led_matrix = led_matrix
         self.midi_output = midi_output
         self.touch_strip = touch_strip
+        self.touch_strip_led = touch_strip_led
 
     def update_inputs(self):
         """Poll all input devices."""
@@ -372,3 +405,5 @@ class HardwarePort:
         """Push all output changes."""
         self.display.update()
         self.led_matrix.update()
+        if self.touch_strip_led:
+            self.touch_strip_led.update()

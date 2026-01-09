@@ -22,6 +22,7 @@ from lib.chord_machine.hal_protocol import (
     LedMatrixHAL,
     MidiOutputHAL,
     TouchStripHAL,
+    TouchStripLedHAL,
     HardwarePort,
 )
 from lib.chord_machine.constants import (
@@ -70,6 +71,11 @@ class PinConfig:
     TOUCH_I2C_ID = 1
     TOUCH_ADDRESS = 0x5A
     TOUCH_PAD_COUNT = 12
+
+    # Touch Strip LED (WS2812)
+    TOUCH_STRIP_LED_PIN = 38
+    TOUCH_STRIP_LED_COUNT = 25
+    TOUCH_STRIP_LED_BRIGHTNESS = 0.1
 
     # MCP23017 pin assignments
     # Port A (pins 0-7): Encoder and outputs
@@ -444,6 +450,70 @@ class MCUTouchStripHAL(TouchStripHAL):
         return False
 
 
+class MCUTouchStripLedHAL(TouchStripLedHAL):
+    """WS2812 LED strip above touch strip (24 LEDs, 2 per pad + 1 ignored)."""
+
+    def __init__(self, pin, count=24, brightness=0.1):
+        """
+        Args:
+            pin: GPIO Pin for NeoPixel data
+            count: Number of LEDs (default 24)
+            brightness: Brightness multiplier 0.0-1.0
+        """
+        self.np = NeoPixel(pin, count)
+        self.count = count
+        self.brightness = brightness
+        self.num_pads = 12
+        self._dirty = False
+
+    def _apply_brightness(self, color):
+        """Apply brightness scaling to a color tuple."""
+        return tuple(int(c * self.brightness) for c in color)
+
+    def clear(self):
+        """Turn off all LEDs."""
+        self.np.fill(Color.OFF)
+        self._dirty = True
+
+    def update_scale_and_chord(
+        self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
+    ):
+        """
+        Update LEDs to show scale notes and chord notes.
+
+        Each touch pad (0-11) represents a chromatic semitone.
+        - First LED (pad * 2): blue if semitone is in scale
+        - Second LED (pad * 2 + 1): green if semitone is in active chord
+        - LED 24 stays off (ignored)
+        """
+        for pad in range(self.num_pads):
+            semitone = pad
+            first_led_index = pad * 2
+            second_led_index = pad * 2 + 1
+
+            # First LED: scale indicator
+            if semitone in scale_semitones:
+                self.np[first_led_index] = self._apply_brightness(scale_color)
+            else:
+                self.np[first_led_index] = Color.OFF
+
+            # Second LED: chord indicator
+            if semitone in chord_semitones:
+                self.np[second_led_index] = self._apply_brightness(chord_color)
+            else:
+                self.np[second_led_index] = Color.OFF
+
+        # LED 24 stays off
+        self.np[24] = Color.OFF
+        self._dirty = True
+
+    def update(self):
+        """Push changes to LED hardware."""
+        if self._dirty:
+            self.np.write()
+            self._dirty = False
+
+
 # ============================================================================
 # FACTORY FUNCTION
 # ============================================================================
@@ -514,4 +584,11 @@ def create_mcu_hardware_port():
         PinConfig.TOUCH_ADDRESS,
     )
 
-    return HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip)
+    # Touch strip LED (WS2812)
+    touch_strip_led = MCUTouchStripLedHAL(
+        Pin(PinConfig.TOUCH_STRIP_LED_PIN, Pin.OUT),
+        PinConfig.TOUCH_STRIP_LED_COUNT,
+        PinConfig.TOUCH_STRIP_LED_BRIGHTNESS,
+    )
+
+    return HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip, touch_strip_led)

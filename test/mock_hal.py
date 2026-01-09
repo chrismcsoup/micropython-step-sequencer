@@ -9,6 +9,7 @@ from lib.chord_machine.hal_protocol import (
     LedMatrixHAL,
     MidiOutputHAL,
     TouchStripHAL,
+    TouchStripLedHAL,
     HardwarePort,
 )
 
@@ -261,6 +262,38 @@ class MockTouchStripHAL(TouchStripHAL):
         return False
 
 
+class MockTouchStripLedHAL(TouchStripLedHAL):
+    """Mock touch strip LED that records all LED operations."""
+
+    def __init__(self, count=24):
+        self.count = count
+        self.calls = []
+        self.leds = [(0, 0, 0)] * count
+        self.scale_semitones = set()
+        self.chord_semitones = set()
+
+    def clear(self):
+        self.calls.append(("clear",))
+        self.leds = [(0, 0, 0)] * self.count
+
+    def update_scale_and_chord(
+        self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
+    ):
+        self.calls.append(("update_scale_and_chord", scale_semitones, chord_semitones, scale_color, chord_color))
+        self.scale_semitones = scale_semitones
+        self.chord_semitones = chord_semitones
+        # Simulate LED update
+        for pad in range(12):
+            semitone = pad
+            first_led = pad * 2
+            second_led = pad * 2 + 1
+            self.leds[first_led] = scale_color if semitone in scale_semitones else (0, 0, 0)
+            self.leds[second_led] = chord_color if semitone in chord_semitones else (0, 0, 0)
+
+    def update(self):
+        self.calls.append(("update",))
+
+
 def create_mock_hardware_port(include_touch_strip=True):
     """
     Factory function to create a mock hardware port for testing.
@@ -277,8 +310,9 @@ def create_mock_hardware_port(include_touch_strip=True):
     led_matrix = MockLedMatrixHAL()
     midi_output = MockMidiOutputHAL()
     touch_strip = MockTouchStripHAL() if include_touch_strip else None
+    touch_strip_led = MockTouchStripLedHAL() if include_touch_strip else None
 
-    port = HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip)
+    port = HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip, touch_strip_led)
 
     mocks = {
         "buttons": buttons,
@@ -287,6 +321,7 @@ def create_mock_hardware_port(include_touch_strip=True):
         "led_matrix": led_matrix,
         "midi_output": midi_output,
         "touch_strip": touch_strip,
+        "touch_strip_led": touch_strip_led,
     }
 
     return port, mocks

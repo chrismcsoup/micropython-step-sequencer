@@ -6,6 +6,7 @@ Platform-independent - receives hardware through dependency injection.
 from .chord_engine import ChordEngine
 from .ui_state import UIState, Event
 from .constants import Color, Mode, Midi as MidiConst, Hardware
+from .music_theory import get_scale_semitones, get_chord_semitones
 
 
 class ChordMachineApp:
@@ -47,11 +48,17 @@ class ChordMachineApp:
         # Key: pad (0-11), Value: MIDI note number
         self._active_notes_by_pad = {}
 
+        # Track current active chord degree for LED strip visualization
+        self._current_chord_degree = None
+
         # Subscribe to UI events
         self._setup_event_handlers()
 
         # Initial display update
         self._update_display()
+
+        # Initial LED strip update
+        self._update_touch_strip_leds()
 
     def _setup_event_handlers(self):
         """Connect UI state events to hardware actions."""
@@ -66,6 +73,10 @@ class ChordMachineApp:
             )
             # Store notes for this specific degree
             self._active_notes_by_degree[degree] = list(notes)
+
+            # Track current chord degree for LED strip
+            self._current_chord_degree = degree
+            self._update_touch_strip_leds()
 
             # Update LEDs
             self.hw.led_matrix.set_button_led(degree, Color.CHORD_ACTIVE)
@@ -86,6 +97,16 @@ class ChordMachineApp:
                 )
                 del self._active_notes_by_degree[degree]
 
+            # Clear chord degree if this was the active one
+            if self._current_chord_degree == degree:
+                # Check if there are other active chords
+                if self._active_notes_by_degree:
+                    # Use the first remaining active chord degree
+                    self._current_chord_degree = next(iter(self._active_notes_by_degree.keys()))
+                else:
+                    self._current_chord_degree = None
+                self._update_touch_strip_leds()
+
             # Update LEDs
             self.hw.led_matrix.set_button_led(degree, Color.OFF)
             
@@ -103,6 +124,7 @@ class ChordMachineApp:
 
         def on_scale_changed(data):
             self._update_display()
+            self._update_touch_strip_leds()
 
         def on_mode_changed(data):
             self._update_display()
@@ -117,6 +139,7 @@ class ChordMachineApp:
 
         def on_root_changed(data):
             self._update_display()
+            self._update_touch_strip_leds()
 
         def on_chord_hold_changed(data):
             """Handle chord hold mode toggle."""
@@ -193,6 +216,27 @@ class ChordMachineApp:
                 display_data["active_chord"]["numeral"],
             )
         self.ui_state.clear_display_dirty()
+
+    def _update_touch_strip_leds(self):
+        """
+        Update touch strip LED visualization.
+        
+        - First LED of each pad (even indices): Blue if chromatic note is in scale
+        - Second LED of each pad (odd indices): Green if chromatic note is in active chord
+        """
+        if not self.hw.touch_strip_led:
+            return
+        
+        scale_name = self.chord_engine.scale_name
+        scale_semitones = get_scale_semitones(scale_name)
+        chord_semitones = get_chord_semitones(scale_name, self._current_chord_degree)
+        
+        self.hw.touch_strip_led.update_scale_and_chord(
+            scale_semitones,
+            chord_semitones,
+            scale_color=Color.BLUE,
+            chord_color=Color.GREEN,
+        )
 
     def update(self):
         """
