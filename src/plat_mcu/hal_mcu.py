@@ -9,7 +9,7 @@ This file contains all hardware-specific code. When changing hardware:
 """
 from machine import Pin, I2C
 from neopixel import NeoPixel
-from ssd1306 import SSD1306_I2C
+from lib.sh1106.sh1106 import SH1106_I2C
 from lib.midi import Midi
 from lib.mcp23017 import MCP23017, Rotary
 from lib.mpr121 import MPR121
@@ -44,18 +44,45 @@ class PinConfig:
     Modify this class when changing hardware connections.
     """
 
-    # I2C Bus 0: MCP23017 I/O Expander
-    I2C_0_SCL = 6
-    I2C_0_SDA = 5
-    MCP_INTERRUPT = 4
-    MCP_ADDRESS = 0x20
+    # ========================================================================
+    # I2C BUS CONFIGURATION
+    # ========================================================================
+    
+    # I2C Bus 0: OLED Display (SH1106) + Touch Sensor (MPR121)
+    # Pins: SCL=1, SDA=2
+    I2C_BUS_0_SCL = 1
+    I2C_BUS_0_SDA = 2
+    
+    # I2C Bus 1: I/O Expander (MCP23017)
+    # Pins: SCL=6, SDA=5
+    I2C_BUS_1_SCL = 6
+    I2C_BUS_1_SDA = 5
 
-    # I2C Bus 1: OLED Display (separate bus)
-    OLED_I2C_ID = 1
-    OLED_SCL = 1
-    OLED_SDA = 2
+    # ========================================================================
+    # I2C DEVICE: OLED Display (SH1106) - Bus 0
+    # ========================================================================
+    OLED_I2C_BUS = 0
+    OLED_ADDRESS = 0x3C
     OLED_WIDTH = 128
-    OLED_HEIGHT = 32
+    OLED_HEIGHT = 64
+
+    # ========================================================================
+    # I2C DEVICE: Touch Sensor (MPR121) - Bus 0
+    # ========================================================================
+    TOUCH_I2C_BUS = 0
+    TOUCH_ADDRESS = 0x5A
+    TOUCH_PAD_COUNT = 12
+
+    # ========================================================================
+    # I2C DEVICE: I/O Expander (MCP23017) - Bus 1
+    # ========================================================================
+    MCP_I2C_BUS = 1
+    MCP_ADDRESS = 0x20
+    MCP_INTERRUPT = 4
+
+    # ========================================================================
+    # OTHER PERIPHERALS
+    # ========================================================================
 
     # NeoPixel LED Matrix (8x8 = 64 LEDs)
     NEOPIXEL_PIN = 14
@@ -66,11 +93,6 @@ class PinConfig:
     MIDI_TX = 39
     MIDI_RX = 40
     MIDI_UART_ID = 1
-
-    # Touch Strip (MPR121) - uses same I2C bus as OLED
-    TOUCH_I2C_ID = 1
-    TOUCH_ADDRESS = 0x5A
-    TOUCH_PAD_COUNT = 12
 
     # Touch Strip LED (WS2812)
     TOUCH_STRIP_LED_PIN = 38
@@ -199,16 +221,20 @@ class MCUEncoderHAL(EncoderHAL):
 
 
 class MCUDisplayHAL(DisplayHAL):
-    """OLED display implementation using SSD1306."""
+    """OLED display implementation using SH1106."""
 
-    def __init__(self, i2c, width=128, height=32):
+    def __init__(self, i2c, width=128, height=64, addr=0x3C):
         """
         Args:
             i2c: I2C instance
             width: Display width in pixels
             height: Display height in pixels
+            addr: I2C address (default 0x3C)
         """
-        self.oled = SSD1306_I2C(width, height, i2c)
+        self.oled = SH1106_I2C(width, height, i2c, addr=addr)
+        # Power cycle and flip for correct orientation
+        self.oled.sleep(False)
+        self.oled.flip(True)
         self.width = width
         self.height = height
         self._dirty = True
@@ -526,18 +552,22 @@ def create_mcu_hardware_port():
     Returns:
         HardwarePort instance with all HAL implementations configured
     """
-    # Initialize I2C bus 0 for MCP23017
-    i2c_mcp = I2C(0, scl=Pin(PinConfig.I2C_0_SCL), sda=Pin(PinConfig.I2C_0_SDA))
+    # Initialize I2C Bus 0: OLED Display + Touch Sensor (pins 1/2)
+    i2c_bus_0 = I2C(
+        PinConfig.OLED_I2C_BUS,
+        scl=Pin(PinConfig.I2C_BUS_0_SCL),
+        sda=Pin(PinConfig.I2C_BUS_0_SDA),
+    )
 
-    # Initialize I2C bus 1 for OLED (separate bus)
-    i2c_oled = I2C(
-        PinConfig.OLED_I2C_ID,
-        scl=Pin(PinConfig.OLED_SCL),
-        sda=Pin(PinConfig.OLED_SDA),
+    # Initialize I2C Bus 1: MCP23017 I/O Expander (pins 5/6)
+    i2c_bus_1 = I2C(
+        PinConfig.MCP_I2C_BUS,
+        scl=Pin(PinConfig.I2C_BUS_1_SCL),
+        sda=Pin(PinConfig.I2C_BUS_1_SDA),
     )
 
     # Initialize MCP23017
-    mcp = MCP23017(i2c_mcp, address=PinConfig.MCP_ADDRESS)
+    mcp = MCP23017(i2c_bus_1, address=PinConfig.MCP_ADDRESS)
 
     # Configure MCP port A pins for encoder (outputs and inputs)
     for pin_num in range(8):
@@ -561,9 +591,10 @@ def create_mcu_hardware_port():
     )
 
     display = MCUDisplayHAL(
-        i2c_oled,  # OLED on separate I2C bus
+        i2c_bus_0,
         PinConfig.OLED_WIDTH,
         PinConfig.OLED_HEIGHT,
+        PinConfig.OLED_ADDRESS,
     )
 
     led_matrix = MCULedMatrixHAL(
@@ -578,9 +609,9 @@ def create_mcu_hardware_port():
         Pin(PinConfig.MIDI_RX),
     )
 
-    # Touch strip uses same I2C bus as OLED
+    # Touch strip uses same I2C bus as OLED (bus 0)
     touch_strip = MCUTouchStripHAL(
-        i2c_oled,
+        i2c_bus_0,
         PinConfig.TOUCH_ADDRESS,
     )
 

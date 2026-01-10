@@ -44,7 +44,7 @@ def display_wifi_ap_info(oled, ssid, password):
     oled.show()
 
 
-# Initialize I2C and OLED display
+# Initialize I2C and OLED display (default address: 0x3C)
 i2c = I2C(0, scl=Pin(1), sda=Pin(2))
 print("I2C Address      : " + hex(i2c.scan()[0]).upper())
 print("I2C Configuration: " + str(i2c))

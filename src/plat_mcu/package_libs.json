@@ -8,6 +8,8 @@
         ["mcp23017/rotary.py", "../../lib/mcp23017/rotary.py"],
         ["mpr121/__init__.py", "../../lib/mpr121/__init__.py"],
         ["mpr121/mpr121.py", "../../lib/mpr121/mpr121.py"],
+        ["sh1106/__init__.py", "../../lib/sh1106/__init__.py"],
+        ["sh1106/sh1106.py", "../../lib/sh1106/sh1106.py"],
         ["tls/key.pem", "tls/key.pem"],
         ["tls/cert.pem", "tls/cert.pem"],
         ["tls/key.der", "tls/key.der"],
