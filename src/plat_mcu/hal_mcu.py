@@ -11,8 +11,9 @@ from machine import Pin, I2C
 from neopixel import NeoPixel
 from lib.sh1106.sh1106 import SH1106_I2C
 from lib.midi import Midi
-from lib.mcp23017 import MCP23017, Rotary
+from lib.mcp23017 import MCP23017
 from lib.mpr121 import MPR121
+from lib.rotary.rotary_irq_esp import RotaryIRQ
 from utils import Button
 
 from lib.chord_machine.hal_protocol import (
@@ -92,12 +93,12 @@ class PinConfig:
     TOUCH_STRIP_LED_COUNT = 25
     TOUCH_STRIP_LED_BRIGHTNESS = 0.1
 
-    # MCP23017 pin assignments
-    # Port A (pins 0-7): Encoder and outputs
-    ENCODER_CLK = 7
-    ENCODER_DT = 6
-    ENCODER_SW = 5
+    # Rotary Encoder (direct ESP32 GPIO)
+    ENCODER_CLK = 35
+    ENCODER_DT = 34
+    ENCODER_SW = 33
 
+    # MCP23017 pin assignments
     # Port B (pins 8-15): 8 Buttons with internal pullups
     BUTTON_PINS = [8, 9, 10, 11, 12, 13, 14, 15]
 
@@ -147,70 +148,69 @@ class MCUButtonsHAL(ButtonsHAL):
 
 
 class MCUEncoderHAL(EncoderHAL):
-    """Rotary encoder implementation using MCP23017."""
+    """Rotary encoder implementation using direct ESP32 GPIO with RotaryIRQ."""
 
-    def __init__(self, mcp, interrupt_pin, clk, dt, sw):
+    def __init__(self, clk_pin, dt_pin, sw_pin):
         """
         Args:
-            mcp: MCP23017 instance
-            interrupt_pin: ESP32 pin for MCP interrupt
-            clk: MCP23017 pin for encoder CLK
-            dt: MCP23017 pin for encoder DT
-            sw: MCP23017 pin for encoder switch
+            clk_pin: ESP32 GPIO pin number for encoder CLK
+            dt_pin: ESP32 GPIO pin number for encoder DT
+            sw_pin: ESP32 GPIO pin number for encoder switch
         """
         import time
-        self._value = 0
         self._last_value = 0
         self._button_pressed = False
         self._last_button_time = 0
-        self._last_sw_state = 0  # Track previous switch state
+        self._last_sw_state = 1  # Pull-up means default high
         self._debounce_ms = Hardware.ENCODER_DEBOUNCE_MS
         self._time = time
         self._invert_direction = True  # Invert rotation direction
 
-        def callback(val, sw):
-            self._value = val
-            # Only trigger on rising edge (0 -> 1) of switch
-            if sw == 1 and self._last_sw_state == 0:
-                # Debounce the button
-                now = self._time.ticks_ms()
-                if self._time.ticks_diff(now, self._last_button_time) > self._debounce_ms:
-                    self._button_pressed = True
-                    self._last_button_time = now
-            self._last_sw_state = sw
+        # Initialize RotaryIRQ with direct GPIO pins
+        self.rotary = RotaryIRQ(
+            pin_num_clk=clk_pin,
+            pin_num_dt=dt_pin,
+            min_val=Hardware.ENCODER_MIN,
+            max_val=Hardware.ENCODER_MAX,
+            pull_up=True,
+            reverse=self._invert_direction,
+            range_mode=RotaryIRQ.RANGE_BOUNDED,
+        )
+        self.rotary.set(value=Hardware.ENCODER_START)
+        self._last_value = self.rotary.value()
 
-        # Set min_val and max_val to allow full range
-        self.rotary = Rotary(mcp.porta, interrupt_pin, clk, dt, sw, callback,
-                             start_val=Hardware.ENCODER_START, 
-                             min_val=Hardware.ENCODER_MIN, 
-                             max_val=Hardware.ENCODER_MAX)
-        self.rotary.start()
+        # Button pin with pull-up
+        self._button = Pin(sw_pin, Pin.IN, Pin.PULL_UP)
 
     def get_delta(self):
-        delta = self._value - self._last_value
-        self._last_value = self._value
-        # Invert direction if configured
-        if self._invert_direction:
-            delta = -delta
+        current_value = self.rotary.value()
+        delta = current_value - self._last_value
+        self._last_value = current_value
         return delta
 
     def was_button_pressed(self):
-        if self._button_pressed:
-            self._button_pressed = False
-            return True
+        # Poll button and detect falling edge (pressed = low with pull-up)
+        current_sw = self._button.value()
+        if current_sw == 0 and self._last_sw_state == 1:
+            # Debounce
+            now = self._time.ticks_ms()
+            if self._time.ticks_diff(now, self._last_button_time) > self._debounce_ms:
+                self._last_button_time = now
+                self._last_sw_state = current_sw
+                return True
+        self._last_sw_state = current_sw
         return False
 
     def get_value(self):
-        return self._value
+        return self.rotary.value()
 
     def set_value(self, value):
-        self._value = value
+        self.rotary.set(value=value)
         self._last_value = value
-        self.rotary.value = value
 
     def stop(self):
         """Stop the encoder interrupt handler."""
-        self.rotary.stop()
+        self.rotary.close()
 
 
 class MCUDisplayHAL(DisplayHAL):
@@ -552,25 +552,14 @@ def create_mcu_hardware_port():
         sda=Pin(PinConfig.I2C_SDA),
     )
 
-    # Initialize MCP23017
+    # Initialize MCP23017 for buttons
     mcp = MCP23017(i2c, address=PinConfig.MCP_ADDRESS)
-
-    # Configure MCP port A pins for encoder (outputs and inputs)
-    for pin_num in range(8):
-        if pin_num in [PinConfig.ENCODER_CLK, PinConfig.ENCODER_DT, PinConfig.ENCODER_SW]:
-            mcp.pin(pin_num, mode=1, pullup=True)  # Input with pullup
-        else:
-            mcp.pin(pin_num, mode=0, value=0)  # Output
-
-    # Interrupt pin for encoder
-    interrupt_pin = Pin(PinConfig.MCP_INTERRUPT, mode=Pin.IN)
 
     # Create HAL instances
     buttons = MCUButtonsHAL(mcp, PinConfig.BUTTON_PINS)
 
+    # Encoder uses direct ESP32 GPIO with RotaryIRQ
     encoder = MCUEncoderHAL(
-        mcp,
-        interrupt_pin,
         PinConfig.ENCODER_CLK,
         PinConfig.ENCODER_DT,
         PinConfig.ENCODER_SW,
