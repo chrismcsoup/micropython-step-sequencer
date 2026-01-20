@@ -13,7 +13,7 @@ uart = UART(UART_ID, baudrate=31250, bits=8, parity=None, stop=1,
             tx=Pin(TX_PIN, Pin.OUT), rx=Pin(RX_PIN, Pin.IN))
 
 # debug pin to see that code is actually sending
-DBG = Pin(2, Pin.OUT)  # change to any LED pin you have, or ignore
+#DBG = Pin(2, Pin.OUT)  # change to any LED pin you have, or ignore
 
 TEST = b"\x90\x3C\x64\x80\x3C\x00"
 
@@ -32,9 +32,9 @@ def read_some(timeout_ms=200):
 print("Loopback: connect TX -> RX with a jumper!")
 
 while True:
-    DBG.value(1)
+    #DBG.value(1)
     uart.write(TEST)
-    DBG.value(0)
+    #DBG.value(0)
 
     got = read_some(200)
     if got:

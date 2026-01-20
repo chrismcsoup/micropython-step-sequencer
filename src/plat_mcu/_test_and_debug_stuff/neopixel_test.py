@@ -32,7 +32,7 @@ np = NeoPixel(led_pin, 64)  # create NeoPixel driver on GPIO0 for 2 pixels
 def color_all(r, g, b):
     pass
 
-def wheel(pos, brightness=0.5):
+def wheel(pos, brightness=0.1):
     """Convert a number (0-255) to a color cycling through RGB with adjustable brightness."""
     pos = pos % 256  # Ensure the position is within 0-255
     brightness = max(0.0, min(1.0, brightness))  # Clamp brightness between 0.0 and 1.0
