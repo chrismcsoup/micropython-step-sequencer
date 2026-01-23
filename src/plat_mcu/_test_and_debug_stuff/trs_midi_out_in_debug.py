@@ -5,8 +5,8 @@
 from machine import UART, Pin
 import time
 
-TX_PIN = 39   # your TX
-RX_PIN = 40   # your RX
+TX_PIN = 37   # your TX
+RX_PIN = 1   # your RX
 UART_ID = 1
 
 uart = UART(UART_ID, baudrate=31250, bits=8, parity=None, stop=1,
