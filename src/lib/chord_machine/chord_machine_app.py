@@ -285,6 +285,11 @@ class ChordMachineApp:
                     self.ui_state.trigger_note(pad)
                 if self.hw.touch_strip.was_released(pad):
                     self.ui_state.release_note(pad)
+            
+            # Update touch strip LED highlights based on current touch state
+            if self.hw.touch_strip_led:
+                touched = self.hw.touch_strip.get_touched()
+                self.hw.touch_strip_led.set_touched_pads(touched)
 
         # Update display if dirty
         if self.ui_state.display_dirty:

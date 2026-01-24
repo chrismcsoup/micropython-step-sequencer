@@ -277,6 +277,19 @@ class TouchStripLedHAL:
         """Turn off all LEDs."""
         raise NotImplementedError
 
+    def set_touched_pads(self, touched_bitmask):
+        """
+        Set which pads are currently touched for visual feedback.
+        
+        When a pad is touched:
+        - If it's a scale note: increase brightness of scale LED
+        - If it's not a scale note: show white on scale LED
+        
+        Args:
+            touched_bitmask: Bitmask of touched pads (bit N = pad N is touched)
+        """
+        pass  # Optional - default implementation does nothing
+
     def update_scale_and_chord(
         self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
     ):

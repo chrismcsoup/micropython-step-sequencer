@@ -63,12 +63,13 @@ class PinConfig:
     OLED_HEIGHT = 64
 
     # ========================================================================
-    # I2C DEVICE: Touch Sensor (MPR121) - Bus 0 - NOT CONNECTED
+    # I2C DEVICE: Touch Sensor (MPR121) - Bus 0
     # ========================================================================
-    # Touch sensor is not connected in current hardware
-    TOUCH_ENABLED = False
+    TOUCH_ENABLED = True
     TOUCH_ADDRESS = 0x5A
     TOUCH_PAD_COUNT = 12
+    # Set to True if pads are wired in reverse order (B on left, C on right)
+    TOUCH_REVERSED = True
 
     # ========================================================================
     # I2C DEVICE: I/O Expander (MCP23017) - Bus 0
@@ -643,22 +644,38 @@ class MCUDummyTouchStripHAL(TouchStripHAL):
 class MCUTouchStripHAL(TouchStripHAL):
     """Capacitive touch strip implementation using MPR121."""
 
-    def __init__(self, i2c, address=0x5A):
+    def __init__(self, i2c, address=0x5A, reversed=False):
         """
         Args:
             i2c: I2C instance
             address: MPR121 I2C address (default 0x5A)
+            reversed: If True, reverse pad order (pad 0 becomes pad 11, etc.)
         """
         self.mpr = MPR121(i2c, address)
+        self._reversed = reversed
         self._last_touched = 0
         self._current_touched = 0
         self._just_touched = 0
         self._just_released = 0
 
+    def _reverse_bits(self, value):
+        """Reverse the lower 12 bits of a bitmask."""
+        result = 0
+        for i in range(12):
+            if value & (1 << i):
+                result |= (1 << (11 - i))
+        return result
+
     def update(self):
         """Poll touch sensor and update state."""
         self._last_touched = self._current_touched
-        self._current_touched = self.mpr.touched()
+        raw_touched = self.mpr.touched()
+        
+        # Apply reversal if configured
+        if self._reversed:
+            self._current_touched = self._reverse_bits(raw_touched)
+        else:
+            self._current_touched = raw_touched
         
         # Calculate edges
         self._just_touched = self._current_touched & ~self._last_touched
@@ -743,17 +760,38 @@ class MCUTouchStripLedHAL(TouchStripLedHAL):
         self.np = NeoPixel(pin, count)
         self.count = count
         self.brightness = brightness
+        self.brightness_highlight = 0.15  # Brighter when touched
+        self.brightness_non_scale = 0.10  # White for non-scale touched keys
         self.num_pads = 12
         self._dirty = False
+        # Store current state for touch highlight updates
+        self._scale_semitones = set()
+        self._chord_semitones = set()
+        self._scale_color = (0, 0, 255)
+        self._chord_color = (0, 255, 0)
+        self._touched_pads = 0  # Bitmask of touched pads
 
-    def _apply_brightness(self, color):
+    def _apply_brightness(self, color, brightness=None):
         """Apply brightness scaling to a color tuple."""
-        return tuple(int(c * self.brightness) for c in color)
+        if brightness is None:
+            brightness = self.brightness
+        return tuple(int(c * brightness) for c in color)
 
     def clear(self):
         """Turn off all LEDs."""
         self.np.fill(Color.OFF)
         self._dirty = True
+
+    def set_touched_pads(self, touched_bitmask):
+        """
+        Set which pads are currently touched and update LEDs.
+        
+        Args:
+            touched_bitmask: Bitmask of touched pads (bit N = pad N)
+        """
+        if self._touched_pads != touched_bitmask:
+            self._touched_pads = touched_bitmask
+            self._redraw_leds()
 
     def update_scale_and_chord(
         self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
@@ -762,23 +800,45 @@ class MCUTouchStripLedHAL(TouchStripLedHAL):
         Update LEDs to show scale notes and chord notes.
 
         Each touch pad (0-11) represents a chromatic semitone.
-        - First LED (pad * 2): blue if semitone is in scale
+        - First LED (pad * 2): blue if semitone is in scale (brighter if touched)
         - Second LED (pad * 2 + 1): green if semitone is in active chord
         """
+        self._scale_semitones = scale_semitones
+        self._chord_semitones = chord_semitones
+        self._scale_color = scale_color
+        self._chord_color = chord_color
+        self._redraw_leds()
+
+    def _redraw_leds(self):
+        """Internal: redraw all LEDs based on current state."""
         for pad in range(self.num_pads):
             semitone = pad
             first_led_index = pad * 2
             second_led_index = pad * 2 + 1
+            is_touched = bool(self._touched_pads & (1 << pad))
+            is_in_scale = semitone in self._scale_semitones
 
-            # First LED: scale indicator
-            if semitone in scale_semitones:
-                self.np[first_led_index] = self._apply_brightness(scale_color)
+            # First LED: scale indicator (with touch highlight)
+            if is_touched:
+                if is_in_scale:
+                    # Scale note touched: brighter scale color (15%)
+                    self.np[first_led_index] = self._apply_brightness(
+                        self._scale_color, self.brightness_highlight
+                    )
+                else:
+                    # Non-scale note touched: white at 10%
+                    self.np[first_led_index] = self._apply_brightness(
+                        Color.WHITE, self.brightness_non_scale
+                    )
+            elif is_in_scale:
+                # Scale note not touched: normal brightness
+                self.np[first_led_index] = self._apply_brightness(self._scale_color)
             else:
                 self.np[first_led_index] = Color.OFF
 
             # Second LED: chord indicator
-            if semitone in chord_semitones:
-                self.np[second_led_index] = self._apply_brightness(chord_color)
+            if semitone in self._chord_semitones:
+                self.np[second_led_index] = self._apply_brightness(self._chord_color)
             else:
                 self.np[second_led_index] = Color.OFF
 
@@ -895,8 +955,13 @@ def create_mcu_hardware_port():
         Pin(PinConfig.MIDI_TX_3),  # Software UART for 3rd output
     )
 
-    # Touch strip is not connected - use dummy implementation
-    touch_strip = MCUDummyTouchStripHAL()
+    # Touch strip using MPR121 capacitive touch sensor
+    if PinConfig.TOUCH_ENABLED:
+        touch_strip = MCUTouchStripHAL(
+            i2c, PinConfig.TOUCH_ADDRESS, reversed=PinConfig.TOUCH_REVERSED
+        )
+    else:
+        touch_strip = MCUDummyTouchStripHAL()
 
     # Touch strip LED (WS2812) - 12 LEDs for visualization
     touch_strip_led = MCUTouchStripLedHAL(
