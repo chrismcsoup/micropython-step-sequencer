@@ -122,6 +122,125 @@ class PinConfig:
     # Logically split into two groups of 8
     BUTTON_PINS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
+    # ========================================================================
+    # BUTTON AND LED MAPPING
+    # ========================================================================
+    # Logical button positions (index in application code):
+    #   0-3:   Left side, top row, buttons 1-4 (from left)
+    #   4-7:   Left side, bottom row, buttons 1-4 (from left)
+    #   8-11:  Right side, top row, buttons 1-4 (from left)
+    #   12-15: Right side, bottom row, buttons 1-4 (from left)
+    #
+    # Physical button mapping: logical index -> MCP23017 pin number
+    # Reversed within each row of 4 to match physical wiring
+    BUTTON_MAPPING = [
+        # Left side, top row (logical 0-3) - reversed
+        3, 2, 1, 0,
+        # Left side, bottom row (logical 4-7) - reversed
+        7, 6, 5, 4,
+        # Right side, top row (logical 8-11) - reversed
+        11, 10, 9, 8,
+        # Right side, bottom row (logical 12-15) - reversed
+        15, 14, 13, 12,
+    ]
+
+    # Physical LED mapping: logical index -> LED strip index
+    # LEDs are wired in order (not reversed)
+    LED_MAPPING = [
+        # Left side, top row (logical 0-3)
+        0, 1, 2, 3,
+        # Left side, bottom row (logical 4-7)
+        4, 5, 6, 7,
+        # Right side, top row (logical 8-11)
+        12, 13, 14, 15,
+        # Right side, bottom row (logical 12-15)
+        8, 9, 10, 11,
+    ]
+
+    # Touch pad LED mapping: logical pad (0-11) -> (first_led, second_led) indices
+    # Each pad has 2 LEDs. Adjust if wiring differs.
+    # Default: pad 0 = LEDs 0,1; pad 1 = LEDs 2,3; etc.
+    TOUCH_PAD_LED_MAPPING = [
+        (0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11),
+        (12, 13), (14, 15), (16, 17), (18, 19), (20, 21), (22, 23),
+    ]
+
+
+# ============================================================================
+# LED STRIP BASE CLASS
+# ============================================================================
+
+
+class NeoPixelStrip:
+    """
+    Base class for NeoPixel LED strips with common functionality.
+    
+    Handles brightness scaling, dirty tracking, and write operations.
+    Subclasses add domain-specific addressing (matrix, buttons, touch pads).
+    """
+
+    def __init__(self, pin, count, brightness=0.1, mapping=None):
+        """
+        Args:
+            pin: GPIO Pin for NeoPixel data
+            count: Number of physical LEDs
+            brightness: Brightness multiplier 0.0-1.0
+            mapping: Optional list for logical->physical index remapping
+        """
+        self.np = NeoPixel(pin, count)
+        self.count = count
+        self.brightness = brightness
+        self._mapping = mapping
+        self._dirty = False
+
+    def _physical_index(self, logical_index):
+        """Convert logical index to physical LED index."""
+        if self._mapping and 0 <= logical_index < len(self._mapping):
+            return self._mapping[logical_index]
+        return logical_index
+
+    def _apply_brightness(self, color, brightness=None):
+        """Apply brightness scaling to a color tuple."""
+        if brightness is None:
+            brightness = self.brightness
+        return tuple(int(c * brightness) for c in color)
+
+    def set_led(self, index, color, brightness=None):
+        """
+        Set LED by logical index with automatic mapping and brightness.
+        
+        Args:
+            index: Logical LED index
+            color: (R, G, B) tuple with values 0-255
+            brightness: Optional brightness override
+        """
+        physical = self._physical_index(index)
+        if 0 <= physical < self.count:
+            self.np[physical] = self._apply_brightness(color, brightness)
+            self._dirty = True
+
+    def set_led_raw(self, physical_index, color):
+        """Set LED by physical index without brightness (for pre-scaled colors)."""
+        if 0 <= physical_index < self.count:
+            self.np[physical_index] = color
+            self._dirty = True
+
+    def clear(self):
+        """Turn off all LEDs."""
+        self.np.fill((0, 0, 0))
+        self._dirty = True
+
+    def fill(self, color, brightness=None):
+        """Fill all LEDs with a color."""
+        self.np.fill(self._apply_brightness(color, brightness))
+        self._dirty = True
+
+    def update(self):
+        """Push changes to LED hardware if dirty."""
+        if self._dirty:
+            self.np.write()
+            self._dirty = False
+
 
 # ============================================================================
 # HAL IMPLEMENTATIONS
@@ -129,42 +248,53 @@ class PinConfig:
 
 
 class MCUButtonsHAL(ButtonsHAL):
-    """Button implementation using MCP23017 GPIO expander."""
+    """Button implementation using MCP23017 GPIO expander with position mapping."""
 
-    def __init__(self, mcp, pin_numbers):
+    def __init__(self, mcp, pin_numbers, button_mapping=None):
         """
         Args:
             mcp: MCP23017 instance
-            pin_numbers: List of MCP23017 pin numbers for buttons
+            pin_numbers: List of MCP23017 pin numbers for buttons (all available pins)
+            button_mapping: List mapping logical index -> physical pin index
+                           If None, uses identity mapping (logical = physical)
         """
-        self.buttons = []
+        self._button_mapping = button_mapping if button_mapping else list(range(len(pin_numbers)))
+        self._buttons_by_pin = {}
+        
+        # Initialize all physical buttons
         for pin_num in pin_numbers:
             mcp.pin(pin_num, mode=1, pullup=True)  # Input with pullup
-            self.buttons.append(Button(mcp[pin_num]))
+            self._buttons_by_pin[pin_num] = Button(mcp[pin_num])
+        
+        # Create ordered list of buttons based on mapping (for backwards compatibility)
+        self.buttons = [self._buttons_by_pin[pin_numbers[self._button_mapping[i]]] 
+                        for i in range(len(self._button_mapping))]
+
+    def _get_physical_button(self, logical_index):
+        """Get button object for a logical index."""
+        if 0 <= logical_index < len(self._button_mapping):
+            return self.buttons[logical_index]
+        return None
 
     def update(self):
-        for btn in self.buttons:
+        for btn in self._buttons_by_pin.values():
             btn.update()
 
     def was_pressed(self, index):
-        if 0 <= index < len(self.buttons):
-            return self.buttons[index].was_pressed()
-        return False
+        btn = self._get_physical_button(index)
+        return btn.was_pressed() if btn else False
 
     def was_released(self, index):
-        if 0 <= index < len(self.buttons):
-            return self.buttons[index].was_released()
-        return False
+        btn = self._get_physical_button(index)
+        return btn.was_released() if btn else False
 
     def was_long_pressed(self, index):
-        if 0 <= index < len(self.buttons):
-            return self.buttons[index].was_long_pressed()
-        return False
+        btn = self._get_physical_button(index)
+        return btn.was_long_pressed() if btn else False
 
     def is_pressed(self, index):
-        if 0 <= index < len(self.buttons):
-            return self.buttons[index].is_pressed()
-        return False
+        btn = self._get_physical_button(index)
+        return btn.is_pressed() if btn else False
 
 
 class MCUEncoderHAL(EncoderHAL):
@@ -383,76 +513,65 @@ class MCUDisplayHAL(DisplayHAL):
             self._dirty = False
 
 
-class MCULedMatrixHAL(LedMatrixHAL):
-    """NeoPixel 8x8 LED matrix implementation."""
+class MCULedMatrixHAL(NeoPixelStrip, LedMatrixHAL):
+    """
+    NeoPixel 8x8 LED matrix implementation.
+    
+    Addressing:
+        - By index: set_led(0-63, color)
+        - By x,y:   set_pixel(x, y, color) where x=0-7, y=0-7
+    """
 
-    def __init__(self, pin, count=Hardware.MATRIX_LED_COUNT, brightness=0.1):
+    def __init__(self, pin, width=8, height=8, brightness=0.1, mapping=None):
         """
         Args:
             pin: GPIO Pin for NeoPixel data
-            count: Number of LEDs
+            width: Matrix width (default 8)
+            height: Matrix height (default 8)
             brightness: Brightness multiplier 0.0-1.0
+            mapping: Optional index remapping for non-standard wiring
         """
-        self.np = NeoPixel(pin, count)
-        self.count = count
-        self.brightness = brightness
-        self._dirty = False
+        super().__init__(pin, width * height, brightness, mapping)
+        self.width = width
+        self.height = height
 
-    def _apply_brightness(self, color):
-        """Apply brightness scaling to a color tuple."""
-        return tuple(int(c * self.brightness) for c in color)
+    def xy_to_index(self, x, y):
+        """Convert x,y coordinates to LED index."""
+        if 0 <= x < self.width and 0 <= y < self.height:
+            return y * self.width + x
+        return -1
 
-    def clear(self):
-        self.np.fill(Color.OFF)
-        self._dirty = True
+    def set_pixel(self, x, y, color, brightness=None):
+        """Set a specific pixel by x,y coordinates."""
+        index = self.xy_to_index(x, y)
+        if index >= 0:
+            self.set_led(index, color, brightness)
 
+    # Legacy interface methods for LedMatrixHAL compatibility
     def set_button_led(self, index, color):
         """Set LED for button - maps to first row of matrix."""
-        if 0 <= index < Hardware.MATRIX_WIDTH:
-            self.np[index] = self._apply_brightness(color)
-            self._dirty = True
-
-    def set_pixel(self, x, y, color):
-        """Set a specific pixel in the 8x8 matrix."""
-        if 0 <= x < Hardware.MATRIX_WIDTH and 0 <= y < Hardware.MATRIX_HEIGHT:
-            led_index = y * Hardware.MATRIX_WIDTH + x
-            self.np[led_index] = self._apply_brightness(color)
-            self._dirty = True
+        if 0 <= index < self.width:
+            self.set_led(index, color)
 
     def show_chord_visualization(self, notes, root_note):
         """
         Visualize chord notes on the matrix.
         Each row represents one octave, columns represent pitch classes.
         """
-        # Don't clear - just add chord visualization
         for note in notes:
-            # Map MIDI note to matrix position
-            octave = (note // 12) % Hardware.MATRIX_HEIGHT  # Row (0-7)
-            pitch_class = note % 12  # 0-11
-            col = int(pitch_class * Hardware.MATRIX_WIDTH / 12)  # Scale 0-11 to 0-7
-
-            led_index = octave * Hardware.MATRIX_WIDTH + col
-            if 0 <= led_index < self.count:
-                self.np[led_index] = self._apply_brightness(Color.CYAN)
-        self._dirty = True
+            octave = (note // 12) % self.height
+            pitch_class = note % 12
+            col = int(pitch_class * self.width / 12)
+            self.set_pixel(col, octave, Color.CYAN)
 
     def show_scale_indicator(self, scale_index, total_scales):
-        """Show which scale is selected using row 7 (bottom)."""
-        # Clear row 7
-        row_start = (Hardware.MATRIX_HEIGHT - 1) * Hardware.MATRIX_WIDTH
-        for x in range(Hardware.MATRIX_WIDTH):
-            self.np[row_start + x] = Color.OFF
-
-        # Light up LED corresponding to current scale
+        """Show which scale is selected using bottom row."""
+        row_start = (self.height - 1) * self.width
+        for x in range(self.width):
+            self.set_led_raw(row_start + x, (0, 0, 0))
         if total_scales > 0:
-            led_pos = int(scale_index * Hardware.MATRIX_WIDTH / total_scales)
-            self.np[row_start + led_pos] = self._apply_brightness(Color.YELLOW)
-        self._dirty = True
-
-    def update(self):
-        if self._dirty:
-            self.np.write()
-            self._dirty = False
+            led_pos = int(scale_index * self.width / total_scales)
+            self.set_led(row_start + led_pos, Color.YELLOW)
 
 
 class MCUMidiOutputHAL(MidiOutputHAL):
@@ -704,91 +823,115 @@ class MCUTouchStripHAL(TouchStripHAL):
         return False
 
 
-class MCUButtonLedStripHAL:
-    """WS2812 LED strip for button indicators (16 LEDs)."""
+class MCUButtonLedHAL(NeoPixelStrip):
+    """
+    WS2812 LED strip for button indicators (16 LEDs) with position mapping.
+    
+    Addressing by ButtonPosition (Btn) constants:
+        set_led(Btn.LEFT_TOP_1, (255, 0, 0))   # Red
+        set_led(Btn.RIGHT_BOTTOM_4, (0, 255, 0))  # Green
+    """
 
-    def __init__(self, pin, count=16, brightness=0.1):
+    def __init__(self, pin, count=16, brightness=0.1, led_mapping=None):
         """
         Args:
             pin: GPIO Pin for NeoPixel data
             count: Number of LEDs (default 16)
             brightness: Brightness multiplier 0.0-1.0
+            led_mapping: List mapping logical position -> physical LED index
         """
-        self.np = NeoPixel(pin, count)
-        self.count = count
-        self.brightness = brightness
-        self._dirty = False
+        super().__init__(pin, count, brightness, led_mapping)
         self._button_states = [False] * count
 
-    def _apply_brightness(self, color):
-        """Apply brightness scaling to a color tuple."""
-        return tuple(int(c * self.brightness) for c in color)
-
-    def clear(self):
-        """Turn off all LEDs."""
-        self.np.fill(Color.OFF)
-        self._dirty = True
-
-    def set_button_state(self, button_index, is_pressed):
-        """Update button LED based on button state."""
+    def set_button_state(self, button_index, is_pressed, pressed_color=(255, 255, 255)):
+        """
+        Update button LED based on button state.
+        
+        Args:
+            button_index: Logical button index (use Btn constants)
+            is_pressed: Whether button is currently pressed
+            pressed_color: Color when pressed (default white)
+        """
         if 0 <= button_index < self.count:
             self._button_states[button_index] = is_pressed
             if is_pressed:
-                # White at 10% brightness
-                self.np[button_index] = self._apply_brightness((255, 255, 255))
+                self.set_led(button_index, pressed_color)
             else:
-                self.np[button_index] = Color.OFF
-            self._dirty = True
-
-    def update(self):
-        """Push changes to LED hardware."""
-        if self._dirty:
-            self.np.write()
-            self._dirty = False
+                self.set_led(button_index, (0, 0, 0))
 
 
-class MCUTouchStripLedHAL(TouchStripLedHAL):
-    """WS2812 LED strip above touch strip (24 LEDs, 2 per pad)."""
+class MCUTouchPadLedHAL(NeoPixelStrip, TouchStripLedHAL):
+    """
+    WS2812 LED strip for touch pads (24 LEDs, 2 per pad).
+    
+    Addressing by pad number (0-11):
+        set_pad(0, scale_color, chord_color)  # Set both LEDs for pad 0
+        set_pad_led(0, 0, color)  # Set first LED of pad 0
+        set_pad_led(0, 1, color)  # Set second LED of pad 0
+    
+    Physical layout per pad: [scale_led, chord_led]
+    """
 
-    def __init__(self, pin, count=24, brightness=0.1):
+    def __init__(self, pin, count=24, brightness=0.1, pad_mapping=None):
         """
         Args:
             pin: GPIO Pin for NeoPixel data
             count: Number of LEDs (default 24)
             brightness: Brightness multiplier 0.0-1.0
+            pad_mapping: List of (led1, led2) tuples for each pad's physical LEDs
         """
-        self.np = NeoPixel(pin, count)
-        self.count = count
-        self.brightness = brightness
-        self.brightness_highlight = 0.15  # Brighter when touched
-        self.brightness_non_scale = 0.10  # White for non-scale touched keys
+        super().__init__(pin, count, brightness)
         self.num_pads = 12
-        self._dirty = False
-        # Store current state for touch highlight updates
+        self._pad_mapping = pad_mapping  # [(led0_a, led0_b), (led1_a, led1_b), ...]
+        self.brightness_highlight = 0.15
+        self.brightness_non_scale = 0.10
+        # State tracking for scale/chord visualization
         self._scale_semitones = set()
         self._chord_semitones = set()
         self._scale_color = (0, 0, 255)
         self._chord_color = (0, 255, 0)
-        self._touched_pads = 0  # Bitmask of touched pads
+        self._touched_pads = 0
 
-    def _apply_brightness(self, color, brightness=None):
-        """Apply brightness scaling to a color tuple."""
-        if brightness is None:
-            brightness = self.brightness
-        return tuple(int(c * brightness) for c in color)
+    def _get_pad_leds(self, pad):
+        """Get physical LED indices for a pad."""
+        if self._pad_mapping and 0 <= pad < len(self._pad_mapping):
+            return self._pad_mapping[pad]
+        # Default: sequential pairs
+        return (pad * 2, pad * 2 + 1)
 
-    def clear(self):
-        """Turn off all LEDs."""
-        self.np.fill(Color.OFF)
-        self._dirty = True
-
-    def set_touched_pads(self, touched_bitmask):
+    def set_pad_led(self, pad, led_num, color, brightness=None):
         """
-        Set which pads are currently touched and update LEDs.
+        Set one LED of a pad.
         
         Args:
-            touched_bitmask: Bitmask of touched pads (bit N = pad N)
+            pad: Pad number (0-11)
+            led_num: Which LED (0 = first/scale, 1 = second/chord)
+            color: (R, G, B) tuple
+            brightness: Optional brightness override
         """
+        leds = self._get_pad_leds(pad)
+        if leds and 0 <= led_num < 2:
+            physical = leds[led_num]
+            if 0 <= physical < self.count:
+                self.np[physical] = self._apply_brightness(color, brightness)
+                self._dirty = True
+
+    def set_pad(self, pad, first_color, second_color=None, brightness=None):
+        """
+        Set both LEDs of a pad.
+        
+        Args:
+            pad: Pad number (0-11)
+            first_color: Color for first LED (scale indicator)
+            second_color: Color for second LED (chord indicator), or None for off
+            brightness: Optional brightness override
+        """
+        self.set_pad_led(pad, 0, first_color, brightness)
+        self.set_pad_led(pad, 1, second_color if second_color else (0, 0, 0), brightness)
+
+    # TouchStripLedHAL interface methods
+    def set_touched_pads(self, touched_bitmask):
+        """Set which pads are currently touched and update LEDs."""
         if self._touched_pads != touched_bitmask:
             self._touched_pads = touched_bitmask
             self._redraw_leds()
@@ -796,13 +939,7 @@ class MCUTouchStripLedHAL(TouchStripLedHAL):
     def update_scale_and_chord(
         self, scale_semitones, chord_semitones, scale_color=(0, 0, 255), chord_color=(0, 255, 0)
     ):
-        """
-        Update LEDs to show scale notes and chord notes.
-
-        Each touch pad (0-11) represents a chromatic semitone.
-        - First LED (pad * 2): blue if semitone is in scale (brighter if touched)
-        - Second LED (pad * 2 + 1): green if semitone is in active chord
-        """
+        """Update LEDs to show scale notes and chord notes."""
         self._scale_semitones = scale_semitones
         self._chord_semitones = chord_semitones
         self._scale_color = scale_color
@@ -810,92 +947,109 @@ class MCUTouchStripLedHAL(TouchStripLedHAL):
         self._redraw_leds()
 
     def _redraw_leds(self):
-        """Internal: redraw all LEDs based on current state."""
+        """Redraw all LEDs based on current state."""
         for pad in range(self.num_pads):
             semitone = pad
-            first_led_index = pad * 2
-            second_led_index = pad * 2 + 1
             is_touched = bool(self._touched_pads & (1 << pad))
             is_in_scale = semitone in self._scale_semitones
+            is_in_chord = semitone in self._chord_semitones
 
             # First LED: scale indicator (with touch highlight)
             if is_touched:
                 if is_in_scale:
-                    # Scale note touched: brighter scale color (15%)
-                    self.np[first_led_index] = self._apply_brightness(
-                        self._scale_color, self.brightness_highlight
-                    )
+                    self.set_pad_led(pad, 0, self._scale_color, self.brightness_highlight)
                 else:
-                    # Non-scale note touched: white at 10%
-                    self.np[first_led_index] = self._apply_brightness(
-                        Color.WHITE, self.brightness_non_scale
-                    )
+                    self.set_pad_led(pad, 0, Color.WHITE, self.brightness_non_scale)
             elif is_in_scale:
-                # Scale note not touched: normal brightness
-                self.np[first_led_index] = self._apply_brightness(self._scale_color)
+                self.set_pad_led(pad, 0, self._scale_color)
             else:
-                self.np[first_led_index] = Color.OFF
+                self.set_pad_led(pad, 0, (0, 0, 0))
 
             # Second LED: chord indicator
-            if semitone in self._chord_semitones:
-                self.np[second_led_index] = self._apply_brightness(self._chord_color)
+            if is_in_chord:
+                self.set_pad_led(pad, 1, self._chord_color)
             else:
-                self.np[second_led_index] = Color.OFF
+                self.set_pad_led(pad, 1, (0, 0, 0))
 
-        self._dirty = True
+
+# ============================================================================
+# ADAPTERS
+# ============================================================================
+
+
+class ButtonLedAsMatrixAdapter(LedMatrixHAL):
+    """
+    Adapter that provides LedMatrixHAL interface using button LEDs.
+    
+    Optionally delegates matrix operations to an actual 8x8 matrix if provided.
+    """
+
+    def __init__(self, button_leds, buttons_hal, matrix_leds=None):
+        """
+        Args:
+            button_leds: MCUButtonLedHAL instance
+            buttons_hal: MCUButtonsHAL instance to monitor button states
+            matrix_leds: Optional MCULedMatrixHAL for chord visualization
+        """
+        self.leds = button_leds
+        self.buttons = buttons_hal
+        self.matrix = matrix_leds  # Actual 8x8 matrix for visualizations
+        self._custom_colors = {}  # Track custom LED colors set by application
+
+    def clear(self):
+        """Turn off all LEDs and clear custom colors."""
+        self._custom_colors.clear()
+        self.leds.clear()
+        if self.matrix:
+            self.matrix.clear()
+
+    def set_button_led(self, index, color):
+        """
+        Set LED color for a button by logical index.
+        
+        Args:
+            index: Button index 0-15 (use ButtonPosition/Btn constants)
+            color: Tuple (R, G, B) with values 0-255, or None to clear
+        """
+        if color is None or color == (0, 0, 0):
+            self._custom_colors.pop(index, None)
+        else:
+            self._custom_colors[index] = color
+        self.leds.set_led(index, color if color else (0, 0, 0))
+
+    def set_pixel(self, x, y, color):
+        """Delegate to matrix if available."""
+        if self.matrix:
+            self.matrix.set_pixel(x, y, color)
+
+    def show_chord_visualization(self, notes, root_note):
+        """Delegate to matrix if available."""
+        if self.matrix:
+            self.matrix.show_chord_visualization(notes, root_note)
+
+    def show_scale_indicator(self, scale_index, total_scales):
+        """Delegate to matrix if available."""
+        if self.matrix:
+            self.matrix.show_scale_indicator(scale_index, total_scales)
 
     def update(self):
-        """Push changes to LED hardware."""
-        if self._dirty:
-            self.np.write()
-            self._dirty = False
+        """Update LEDs - custom colors take precedence, otherwise show button press state."""
+        for i in range(min(16, len(self.buttons.buttons))):
+            if i in self._custom_colors:
+                # Custom color is already set, keep it
+                continue
+            # Default behavior: show white when pressed
+            is_pressed = self.buttons.is_pressed(i)
+            self.leds.set_button_state(i, is_pressed)
+        self.leds.update()
+        # Also update matrix if available
+        if self.matrix:
+            self.matrix.update()
 
 
 # ============================================================================
 # FACTORY FUNCTION
 # ============================================================================
-
-
-class ButtonLedStripAsMatrixAdapter(LedMatrixHAL):
-    """Adapter to make button LED strip work as LedMatrixHAL interface."""
-
-    def __init__(self, button_led_strip, buttons_hal):
-        """
-        Args:
-            button_led_strip: MCUButtonLedStripHAL instance
-            buttons_hal: MCUButtonsHAL instance to monitor button states
-        """
-        self.led_strip = button_led_strip
-        self.buttons = buttons_hal
-
-    def clear(self):
-        """Turn off all LEDs."""
-        self.led_strip.clear()
-
-    def set_button_led(self, index, color):
-        """Set LED for button - ignores color, just lights white when pressed."""
-        # We update based on actual button state in update()
-        pass
-
-    def set_pixel(self, x, y, color):
-        """Not implemented - button strip is 1D."""
-        pass
-
-    def show_chord_visualization(self, notes, root_note):
-        """Not implemented - button strip doesn't show chords."""
-        pass
-
-    def show_scale_indicator(self, scale_index, total_scales):
-        """Not implemented - button strip doesn't show scale."""
-        pass
-
-    def update(self):
-        """Update LEDs based on button states."""
-        # Update each button LED based on button press state
-        for i in range(min(16, len(self.buttons.buttons))):
-            is_pressed = self.buttons.is_pressed(i)
-            self.led_strip.set_button_state(i, is_pressed)
-        self.led_strip.update()
 
 
 def create_mcu_hardware_port():
@@ -915,8 +1069,8 @@ def create_mcu_hardware_port():
     # Initialize MCP23017 for 16 buttons
     mcp = MCP23017(i2c, address=PinConfig.MCP_ADDRESS)
 
-    # Create HAL instances
-    buttons = MCUButtonsHAL(mcp, PinConfig.BUTTON_PINS)
+    # Create HAL instances with configurable mappings
+    buttons = MCUButtonsHAL(mcp, PinConfig.BUTTON_PINS, PinConfig.BUTTON_MAPPING)
 
     # Dual encoder uses both left and right encoders
     encoder = MCUDualEncoderHAL(
@@ -935,14 +1089,37 @@ def create_mcu_hardware_port():
         PinConfig.OLED_ADDRESS,
     )
 
-    # Use button LED strip instead of matrix for current hardware
-    button_led_strip = MCUButtonLedStripHAL(
+    # ========================================================================
+    # LED Arrays (3 separate strips)
+    # ========================================================================
+    
+    # 1. Button LEDs (16 LEDs) - one per MCP23017 button
+    button_leds = MCUButtonLedHAL(
         Pin(PinConfig.BUTTON_LED_PIN, Pin.OUT),
         PinConfig.BUTTON_LED_COUNT,
         PinConfig.BUTTON_LED_BRIGHTNESS,
+        PinConfig.LED_MAPPING,
     )
-    # Wrap button LED strip to provide LedMatrixHAL interface
-    led_matrix = ButtonLedStripAsMatrixAdapter(button_led_strip, buttons)
+    
+    # 2. LED Matrix (8x8 = 64 LEDs) - ESP32-S3 built-in matrix
+    matrix_leds = MCULedMatrixHAL(
+        Pin(PinConfig.NEOPIXEL_PIN, Pin.OUT),
+        width=8,
+        height=8,
+        brightness=PinConfig.NEOPIXEL_BRIGHTNESS,
+    )
+    
+    # 3. Touch Pad LEDs (24 LEDs) - 2 per touch pad
+    touch_pad_leds = MCUTouchPadLedHAL(
+        Pin(PinConfig.TOUCH_STRIP_LED_PIN, Pin.OUT),
+        PinConfig.TOUCH_STRIP_LED_COUNT,
+        PinConfig.TOUCH_STRIP_LED_BRIGHTNESS,
+        PinConfig.TOUCH_PAD_LED_MAPPING,
+    )
+    
+    # Wrap button LEDs + matrix to provide LedMatrixHAL interface for compatibility
+    # Matrix is used for chord visualization, button LEDs for button feedback
+    led_matrix = ButtonLedAsMatrixAdapter(button_leds, buttons, matrix_leds)
 
     # Triple MIDI output - 2 hardware UARTs + 1 software UART
     midi_output = MCUTripleMidiOutputHAL(
@@ -963,11 +1140,9 @@ def create_mcu_hardware_port():
     else:
         touch_strip = MCUDummyTouchStripHAL()
 
-    # Touch strip LED (WS2812) - 12 LEDs for visualization
-    touch_strip_led = MCUTouchStripLedHAL(
-        Pin(PinConfig.TOUCH_STRIP_LED_PIN, Pin.OUT),
-        PinConfig.TOUCH_STRIP_LED_COUNT,
-        PinConfig.TOUCH_STRIP_LED_BRIGHTNESS,
+    return HardwarePort(
+        buttons, encoder, display, led_matrix, midi_output, touch_strip, touch_pad_leds,
+        # Additional LED arrays accessible via hardware port
+        button_leds=button_leds,
+        matrix_leds=matrix_leds,
     )
-
-    return HardwarePort(buttons, encoder, display, led_matrix, midi_output, touch_strip, touch_strip_led)

@@ -9,6 +9,77 @@ This allows the same application code to run on:
 """
 
 
+# ============================================================================
+# BUTTON POSITION HELPERS
+# ============================================================================
+class ButtonPosition:
+    """
+    Helper class for button/LED position constants and conversion.
+    
+    Logical layout (16 buttons/LEDs):
+        Left side:                    Right side:
+        [0] [1] [2] [3]  (top)       [8] [9] [10] [11]  (top)
+        [4] [5] [6] [7]  (bottom)    [12] [13] [14] [15] (bottom)
+    
+    Usage in application code:
+        from lib.chord_machine.hal_protocol import Btn
+        
+        if buttons.was_pressed(Btn.LEFT_TOP_1):
+            led_matrix.set_button_led(Btn.LEFT_BOTTOM_1, (255, 255, 0))  # Yellow
+    """
+    
+    # Left side, top row (logical indices 0-3)
+    LEFT_TOP_1, LEFT_TOP_2, LEFT_TOP_3, LEFT_TOP_4 = 0, 1, 2, 3
+    # Left side, bottom row (logical indices 4-7)
+    LEFT_BOTTOM_1, LEFT_BOTTOM_2, LEFT_BOTTOM_3, LEFT_BOTTOM_4 = 4, 5, 6, 7
+    # Right side, top row (logical indices 8-11)
+    RIGHT_TOP_1, RIGHT_TOP_2, RIGHT_TOP_3, RIGHT_TOP_4 = 8, 9, 10, 11
+    # Right side, bottom row (logical indices 12-15)
+    RIGHT_BOTTOM_1, RIGHT_BOTTOM_2, RIGHT_BOTTOM_3, RIGHT_BOTTOM_4 = 12, 13, 14, 15
+    
+    @staticmethod
+    def from_location(side, row, position):
+        """
+        Get logical button index from location.
+        
+        Args:
+            side: 'left' or 'right'
+            row: 'top' or 'bottom'
+            position: 1-4 (from left)
+            
+        Returns:
+            Logical button index (0-15)
+        """
+        if position < 1 or position > 4:
+            raise ValueError("Position must be 1-4")
+        base = 0
+        if side == 'right':
+            base += 8
+        if row == 'bottom':
+            base += 4
+        return base + (position - 1)
+    
+    @staticmethod
+    def to_location(index):
+        """
+        Get location from logical button index.
+        
+        Args:
+            index: Logical button index (0-15)
+            
+        Returns:
+            Tuple of (side, row, position)
+        """
+        side = 'left' if index < 8 else 'right'
+        row = 'top' if (index % 8) < 4 else 'bottom'
+        position = (index % 4) + 1
+        return (side, row, position)
+
+
+# Short alias for convenience
+Btn = ButtonPosition
+
+
 class ButtonsHAL:
     """Abstract interface for button input (8 chord buttons)."""
 
@@ -165,7 +236,7 @@ class DisplayHAL:
 
 
 class LedMatrixHAL:
-    """Abstract interface for LED matrix/strip (8x8 NeoPixel)."""
+    """Abstract interface for LED matrix/strip (button LEDs or NeoPixel matrix)."""
 
     def clear(self):
         """Turn off all LEDs."""
@@ -173,10 +244,11 @@ class LedMatrixHAL:
 
     def set_button_led(self, index, color):
         """
-        Set LED for a button (index 0-7).
+        Set LED color for a button by logical index.
 
         Args:
-            index: Button index 0-7
+            index: Button index 0-15 (use ButtonPosition/Btn constants)
+            color: Tuple (R, G, B) with values 0-255
             color: Tuple (R, G, B) with values 0-255
         """
         raise NotImplementedError
@@ -378,6 +450,11 @@ class HardwarePort:
     """
     Complete hardware port interface.
     A platform provides an instance of this with all HAL implementations.
+    
+    LED Arrays:
+        - button_leds: 16 LEDs for buttons (use Btn constants for addressing)
+        - matrix_leds: 8x8 LED matrix (address by index 0-63 or x,y)
+        - touch_strip_led: 24 LEDs for touch pads (address by pad 0-11)
     """
 
     def __init__(
@@ -389,16 +466,20 @@ class HardwarePort:
         midi_output,
         touch_strip=None,
         touch_strip_led=None,
+        button_leds=None,
+        matrix_leds=None,
     ):
         """
         Args:
             buttons: ButtonsHAL implementation
             encoder: EncoderHAL implementation
             display: DisplayHAL implementation
-            led_matrix: LedMatrixHAL implementation
+            led_matrix: LedMatrixHAL implementation (adapter for compatibility)
             midi_output: MidiOutputHAL implementation
             touch_strip: Optional TouchStripHAL implementation
-            touch_strip_led: Optional TouchStripLedHAL implementation
+            touch_strip_led: Optional TouchStripLedHAL (24 LEDs for touch pads)
+            button_leds: Optional MCUButtonLedHAL (16 button LEDs, direct access)
+            matrix_leds: Optional MCULedMatrixHAL (8x8 matrix, direct access)
         """
         self.buttons = buttons
         self.encoder = encoder
@@ -407,6 +488,9 @@ class HardwarePort:
         self.midi_output = midi_output
         self.touch_strip = touch_strip
         self.touch_strip_led = touch_strip_led
+        # Direct LED array access (for advanced usage)
+        self.button_leds = button_leds
+        self.matrix_leds = matrix_leds
 
     def update_inputs(self):
         """Poll all input devices."""
@@ -420,3 +504,7 @@ class HardwarePort:
         self.led_matrix.update()
         if self.touch_strip_led:
             self.touch_strip_led.update()
+        if self.button_leds:
+            self.button_leds.update()
+        if self.matrix_leds:
+            self.matrix_leds.update()
